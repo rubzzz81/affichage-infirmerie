@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>Infirmerie - Ma présence</title>
+<style>
+  :root { --ink: #1b1f2a; --muted: #6b7280; --line: #e3e6ec; --bg: #f4f5f8; }
+  * { box-sizing: border-box; margin: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: "Segoe UI", Roboto, system-ui, sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; padding: 16px 16px 40px; }
+  .wrap { max-width: 520px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+  header img { height: 52px; }
+  header h1 { font-size: 15px; font-weight: 600; color: var(--muted); line-height: 1.25; }
+  .card { background: #fff; border-radius: 20px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 20px -10px rgba(0,0,0,.12); }
+  .card h2 { font-size: 22px; font-weight: 650; }
+  .now { display: inline-flex; align-items: center; gap: 8px; margin: 8px 0 16px; padding: 6px 12px 6px 8px; border-radius: 999px; background: var(--c); color: #fff; font-weight: 600; font-size: 15px; transition: background-color .3s; }
+  .now svg { width: 20px; height: 20px; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn { appearance: none; border: 0; border-radius: 16px; padding: 18px 8px; min-height: 92px; color: #fff; background: var(--c); font: inherit; font-weight: 650; font-size: 17px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; opacity: .42; transition: opacity .2s, transform .1s; }
+  .btn svg { width: 30px; height: 30px; }
+  .btn:active { transform: scale(.97); }
+  .btn.on { opacity: 1; box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--c); }
+  .back { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+  .back.show { display: block; }
+  .back p, .hours p { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { appearance: none; border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 10px 16px; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .chip.on { border-color: #f08a00; background: #fff4e0; color: #b45f00; }
+  input[type=time] { font: inherit; font-size: 16px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); }
+  details.hours { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+  summary { cursor: pointer; font-size: 15px; font-weight: 600; color: var(--muted); list-style: none; }
+  summary::after { content: " ›"; }
+  details[open] summary::after { content: " ⌄"; }
+  .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 12px 0 4px; }
+  .save { appearance: none; border: 0; background: var(--ink); color: #fff; border-radius: 12px; padding: 10px 18px; font: inherit; font-weight: 600; cursor: pointer; }
+  .link { appearance: none; border: 0; background: none; color: var(--muted); font: inherit; font-size: 14px; text-decoration: underline; cursor: pointer; padding: 8px 0; }
+  .who { display: grid; gap: 12px; }
+  .who .btn { --c: #1b1f2a; opacity: 1; min-height: 72px; font-size: 20px; }
+  .toast { position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 80px); background: #1b1f2a; color: #fff; padding: 12px 20px; border-radius: 999px; font-weight: 600; transition: transform .25s; pointer-events: none; }
+  .toast.show { transform: translate(-50%, 0); }
+  .toast.err { background: #b91c1c; }
+  .foot { text-align: center; font-size: 13px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><img src="/static/logo.png" alt=""><h1>Infirmerie<br>Mon affichage</h1></header>
+  <div id="app"></div>
+  <div class="foot"><a class="link" href="/" target="_blank">Voir l'écran d'affichage</a></div>
+</div>
+<div class="toast" id="toast"></div>
+<script src="/static/common.js"></script>
+<script>
+  const app = document.getElementById("app");
+  const store = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} } };
+  let data = null, me = store.get("me"), showAll = false, editing = false;
+
+  function toast(msg, err) {
+    const t = document.getElementById("toast");
+    t.textContent = msg; t.className = "toast show" + (err ? " err" : "");
+    clearTimeout(toast.h); toast.h = setTimeout(() => t.className = "toast", 2200);
+  }
+
+  async function send(payload) {
+    payload.pin = store.get("pin") || "";
+    let r = await fetch("/api/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).catch(() => null);
+    if (r && r.status === 403) {
+      const pin = prompt("Code d'accès de l'infirmerie :");
+      if (pin === null) return;
+      store.set("pin", pin); payload.pin = pin;
+      r = await fetch("/api/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).catch(() => null);
+    }
+    if (!r) return toast("Serveur injoignable", true);
+    const j = await r.json();
+    if (!j.ok) { if (r.status === 403) store.set("pin", null); return toast(j.error, true); }
+    toast("Écran mis à jour ✓");
+  }
+
+  const quick = () => {
+    const out = [];
+    for (const [label, min] of [["15 min", 15], ["30 min", 30], ["1 h", 60]]) {
+      const d = new Date(Date.now() + min * 60000);
+      d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+      out.push([label, d.toTimeString().slice(0, 5)]);
+    }
+    return out;
+  };
+
+  function nurseCard(n) {
+    const st = STATUS[n.status];
+    const btns = Object.keys(STATUS).map(k => `
+      <button class="btn ${n.status === k ? "on" : ""}" style="--c:${STATUS[k].color}" data-act="status" data-id="${n.id}" data-v="${k}">${icon(k)}${STATUS[k].short}</button>`).join("");
+    const chips = quick().map(([l, t]) => `<button class="chip ${n.back === t ? "on" : ""}" data-act="back" data-id="${n.id}" data-v="${t}">${l}</button>`).join("");
+    return `
+    <div class="card" id="n-${n.id}">
+      <h2>${n.name}</h2>
+      <div class="now" style="--c:${st.color}">${icon(n.status)}${st.label}${n.status === "pause" && n.back ? " · " + backText(n.back).toLowerCase() : ""}</div>
+      <div class="btns">${btns}</div>
+      <div class="back ${n.status === "pause" ? "show" : ""}">
+        <p>Retour prévu (facultatif)</p>
+        <div class="chips">${chips}
+          <input type="time" value="${n.back || ""}" data-act="backtime" data-id="${n.id}" aria-label="Heure précise">
+          ${n.back ? `<button class="chip" data-act="back" data-id="${n.id}" data-v="">Effacer</button>` : ""}
+        </div>
+      </div>
+      <details class="hours" ${editing === n.id ? "open" : ""}>
+        <summary data-act="hoursopen" data-id="${n.id}">Horaires d'aujourd'hui : ${fmtHour(n.start)} — ${fmtHour(n.end)}${n.customHours ? " (modifiés)" : ""}</summary>
+        <div class="row">
+          <input type="time" id="s-${n.id}" value="${n.start}"> —
+          <input type="time" id="e-${n.id}" value="${n.end}">
+          <button class="save" data-act="hours" data-id="${n.id}">Enregistrer</button>
+        </div>
+        ${n.customHours ? `<button class="link" data-act="resethours" data-id="${n.id}">Rétablir les horaires habituels</button>` : ""}
+      </details>
+    </div>`;
+  }
+
+  function render() {
+    if (!data) return;
+    if (me && !data.nurses.some(n => n.id === me)) me = null;
+    if (!me && !showAll) {
+      app.innerHTML = `<div class="card"><h2>Qui êtes-vous ?</h2><p style="color:var(--muted);margin:6px 0 14px">À ne faire qu'une fois sur cet appareil.</p>
+        <div class="who">${data.nurses.map(n => `<button class="btn" data-act="me" data-id="${n.id}">${n.name}</button>`).join("")}</div></div>`;
+      return;
+    }
+    const list = showAll || !me ? data.nurses : data.nurses.filter(n => n.id === me);
+    app.innerHTML = list.map(nurseCard).join("") +
+      `<div style="text-align:center">${me ? `<button class="link" data-act="toggleall">${showAll ? "Masquer les autres cabinets" : "Voir les autres cabinets"}</button> · <button class="link" data-act="forget">Ce n'est pas moi</button>` : ""}</div>`;
+  }
+
+  document.addEventListener("input", e => {
+    if (e.target.dataset.act === "backtime" && e.target.value) send({ id: e.target.dataset.id, back: e.target.value });
+  });
+  document.addEventListener("click", e => {
+    const el = e.target.closest("[data-act]"); if (!el) return;
+    const { act, id, v } = el.dataset;
+    if (act === "status") send({ id, status: v });
+    else if (act === "back") send({ id, back: v });
+    else if (act === "hours") { editing = id; send({ id, start: document.getElementById("s-" + id).value, end: document.getElementById("e-" + id).value }); }
+    else if (act === "resethours") send({ id, resetHours: true });
+    else if (act === "hoursopen") editing = editing === id ? false : id;
+    else if (act === "me") { me = id; store.set("me", id); render(); }
+    else if (act === "forget") { me = null; showAll = false; store.set("me", null); render(); }
+    else if (act === "toggleall") { showAll = !showAll; render(); }
+  });
+
+  watchState(d => { if (!document.activeElement || document.activeElement.type !== "time") { data = d; render(); } else data = d; });
+</script>
+</body>
+</html>

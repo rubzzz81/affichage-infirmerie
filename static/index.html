@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Infirmerie - Lycée Louis Rascol</title>
+<style>
+  :root { --u: min(1vw, 1.78vh); --ink: #1b1f2a; --muted: #6b7280; --line: #e6e8ee; }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Segoe UI", Roboto, "Noto Sans", "DejaVu Sans", system-ui, sans-serif;
+    color: var(--ink); background: #fff; overflow: hidden; cursor: none;
+    display: flex; flex-direction: column; padding: calc(var(--u) * 1.8) calc(var(--u) * 3.5) calc(var(--u) * 2.2);
+  }
+  header { display: flex; align-items: center; justify-content: space-between; height: calc(var(--u) * 9); flex: none; }
+  header img { height: 100%; width: auto; }
+  .clock { text-align: right; }
+  .clock .time { font-size: calc(var(--u) * 4.6); font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+  .clock .date { font-size: calc(var(--u) * 1.9); color: var(--muted); margin-top: calc(var(--u) * .8); text-transform: capitalize; }
+  main { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); gap: calc(var(--u) * 3); margin-top: calc(var(--u) * 1.2); }
+  .card { display: flex; flex-direction: column; min-width: 0; }
+  .name { font-size: calc(var(--u) * 4.2); font-weight: 600; text-align: center; padding-bottom: calc(var(--u) * 1.4); }
+  .status {
+    flex: 1; min-height: 0; border-radius: calc(var(--u) * 3); color: #fff; background: var(--c);
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--u) * 1.2);
+    text-align: center; padding: 0 calc(var(--u) * 2); transition: background-color .6s ease;
+    box-shadow: 0 calc(var(--u) * .8) calc(var(--u) * 3) calc(var(--u) * -1) color-mix(in srgb, var(--c) 55%, transparent);
+  }
+  .status svg { width: calc(var(--u) * 7); height: calc(var(--u) * 7); opacity: .95; }
+  .status .label { font-size: calc(var(--u) * 4.8); font-weight: 700; letter-spacing: .02em; text-transform: uppercase; line-height: 1.08; max-width: 100%; overflow-wrap: anywhere; }
+  .status .label.long { font-size: calc(var(--u) * 3.7); }
+  .status .back { font-size: calc(var(--u) * 2.6); font-weight: 500; opacity: .95; min-height: 1.2em; }
+  .hours { text-align: center; padding-top: calc(var(--u) * 1.8); }
+  .hours .cap { font-size: calc(var(--u) * 1.9); color: var(--muted); }
+  .hours .val { font-size: calc(var(--u) * 4.6); font-weight: 600; margin-top: calc(var(--u) * .6); font-variant-numeric: tabular-nums; }
+  .hours .val span { color: var(--muted); font-weight: 400; margin: 0 .25em; }
+  .changed .status { animation: pop .5s ease; }
+  @keyframes pop { 40% { transform: scale(1.012); } }
+  .offline { position: fixed; right: calc(var(--u) * 1.5); bottom: calc(var(--u) * 1); width: calc(var(--u) * 1.2); height: calc(var(--u) * 1.2); border-radius: 50%; background: #f59e0b; display: none; }
+  body.off .offline { display: block; }
+</style>
+</head>
+<body>
+  <header>
+    <img src="/static/logo.png" alt="Lycée Louis Rascol">
+    <div class="clock"><div class="time" id="time"></div><div class="date" id="date"></div></div>
+  </header>
+  <main id="main"></main>
+  <div class="offline" title="Connexion au serveur perdue"></div>
+<script src="/static/common.js"></script>
+<script>
+  const main = document.getElementById("main");
+  let last = {};
+
+  function build(nurses) {
+    main.innerHTML = nurses.map(n => `
+      <section class="card" id="c-${n.id}">
+        <div class="name"></div>
+        <div class="status"><div class="ico"></div><div class="label"></div><div class="back"></div></div>
+        <div class="hours"><div class="cap">Horaires d'aujourd'hui</div><div class="val"></div></div>
+      </section>`).join("");
+  }
+
+  function render(data) {
+    document.body.classList.remove("off");
+    if (main.children.length !== data.nurses.length || data.nurses.some(n => !document.getElementById("c-" + n.id))) build(data.nurses);
+    for (const n of data.nurses) {
+      const card = document.getElementById("c-" + n.id), st = STATUS[n.status];
+      card.querySelector(".name").textContent = n.name;
+      card.querySelector(".status").style.setProperty("--c", st.color);
+      card.querySelector(".ico").innerHTML = icon(n.status);
+      const label = card.querySelector(".label");
+      label.textContent = st.label;
+      label.classList.toggle("long", st.label.length > 16);
+      card.querySelector(".back").textContent = n.status === "pause" ? backText(n.back) : "";
+      card.querySelector(".val").innerHTML = `${fmtHour(n.start)}<span>—</span>${fmtHour(n.end)}`;
+      if (last[n.id] && last[n.id] !== n.status) {
+        card.classList.remove("changed"); void card.offsetWidth; card.classList.add("changed");
+      }
+      last[n.id] = n.status;
+    }
+    window.__data = data;
+  }
+
+  function tick() {
+    const d = new Date();
+    document.getElementById("time").textContent = d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+    document.getElementById("date").textContent = d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  }
+  tick(); setInterval(tick, 1000);
+  setInterval(() => window.__data && render(window.__data), 30000);   // rafraîchit "Retour vers ..."
+  watchState(render);
+  // Signale discrètement une perte de connexion et recharge la page à son retour.
+  let wasOff = false;
+  setInterval(() => fetch("/api/state", { cache: "no-store" }).then(() => { if (wasOff) location.reload(); }).catch(() => { wasOff = true; document.body.classList.add("off"); }), 10000);
+</script>
+</body>
+</html>

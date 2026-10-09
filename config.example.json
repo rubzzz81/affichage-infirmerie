@@ -1,0 +1,17 @@
+{
+  "title": "Infirmerie",
+  "port": 8080,
+  "pin": "",
+  "nurses": [
+    {
+      "id": "dupont",
+      "name": "Mme Dupont",
+      "hours": { "default": ["08:00", "18:00"], "wed": ["08:00", "12:00"] }
+    },
+    {
+      "id": "martin",
+      "name": "Mme Martin",
+      "hours": { "default": ["08:00", "16:00"] }
+    }
+  ]
+}
