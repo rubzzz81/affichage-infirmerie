@@ -8,6 +8,8 @@ son état en deux touches depuis son téléphone ou son PC.
 - Fonctionne hors Internet, sur le réseau local du lycée.
 - Conçu pour un Raspberry Pi derrière l'écran, branché en HDMI, avec Chromium en mode kiosque.
 
+**Nouveau sur le projet ? Suivez le [guide pas à pas](docs/GUIDE.md)** : carte SD, réseau, SSH, installation, kiosque, mise en service.
+
 ## États
 
 | État | Couleur | Affichage |
