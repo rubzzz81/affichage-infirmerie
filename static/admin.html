@@ -56,7 +56,10 @@
   const app = document.getElementById("app");
   const store = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
                   set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} } };
-  let data = null, me = store.get("me"), showAll = false, editing = false;
+  // Lien personnel : /admin?me=<id> sélectionne l'infirmière (et ?hours ouvre les horaires).
+  const params = new URLSearchParams(location.search);
+  if (params.get("me")) store.set("me", params.get("me"));
+  let data = null, me = store.get("me"), showAll = false, editing = params.has("hours") ? me : false;
 
   function toast(msg, err) {
     const t = document.getElementById("toast");

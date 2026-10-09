@@ -10,6 +10,10 @@ son état en deux touches depuis son téléphone ou son PC.
 
 **Nouveau sur le projet ? Suivez le [guide pas à pas](docs/GUIDE.md)** : carte SD, réseau, SSH, installation, kiosque, mise en service.
 
+![Écran d'affichage](docs/img/affichage-2-consultation-pause.png)
+
+<img src="docs/img/admin-3-absence-temporaire.png" alt="Page de commande sur téléphone" width="320">
+
 ## États
 
 | État | Couleur | Affichage |
@@ -84,6 +88,8 @@ Ouvrir `http://<IP_DU_PI>:8080/admin` sur le téléphone ou le PC (même réseau
 3. Pour une absence temporaire : choisir facultativement un retour dans 15 min, 30 min, 1 h, ou une heure précise.
 4. Pour modifier les horaires du jour : déplier « Horaires d'aujourd'hui », puis *Enregistrer*.
    « Rétablir les horaires habituels » annule la modification.
+
+Liens personnels : `http://<IP_DU_PI>:8080/admin?me=<id>` sélectionne directement l'infirmière (`id` du fichier de configuration), pratique pour un QR code ou un favori.
 
 Astuce : ajouter la page à l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil »).
 On peut aussi afficher un QR code vers cette adresse près de l'écran.

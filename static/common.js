@@ -29,7 +29,7 @@ function backText(back) {
 // Connexion temps réel avec reprise automatique + filet de sécurité par interrogation.
 function watchState(onState) {
   const pull = () => fetch("/api/state").then(r => r.json()).then(onState).catch(() => {});
-  try {
+  if (!location.search.includes("nosse")) try {   // ?nosse : sans temps réel (captures d'écran)
     const es = new EventSource("/api/events");
     es.onmessage = e => onState(JSON.parse(e.data));
   } catch (e) {}
