@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" role="img" aria-label="Logo par défaut">
+  <rect x="8" y="8" width="224" height="144" rx="22" fill="#fff" stroke="#c9ced8" stroke-width="3" stroke-dasharray="10 8"/>
+  <rect x="94" y="30" width="52" height="52" rx="10" fill="#1e9e57"/>
+  <path d="M120 40v32M104 56h32" stroke="#fff" stroke-width="9" stroke-linecap="round"/>
+  <text x="120" y="112" text-anchor="middle" font-family="Segoe UI, Roboto, sans-serif" font-size="17" font-weight="600" fill="#1b1f2a">Votre logo ici</text>
+  <text x="120" y="134" text-anchor="middle" font-family="Segoe UI, Roboto, sans-serif" font-size="12" fill="#6b7280">voir config.json → "logo"</text>
+</svg>

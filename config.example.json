@@ -1,7 +1,10 @@
 {
-  "title": "Infirmerie",
+  "school": "Lycée Exemple",
+  "title": "Cabinet d'infirmières",
+  "logo": "branding/logo.png",
   "port": 8080,
   "pin": "",
+  "minEventSeconds": 10,
   "nurses": [
     {
       "id": "dupont",

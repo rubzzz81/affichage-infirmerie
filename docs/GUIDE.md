@@ -244,9 +244,12 @@ nano config.json
 Contenu type, à adapter :
 ```json
 {
-  "title": "Infirmerie",
+  "school": "Lycée Louis Rascol",
+  "title": "Cabinet d'infirmières",
+  "logo": "branding/logo.png",
   "port": 8080,
   "pin": "",
+  "minEventSeconds": 10,
   "nurses": [
     { "id": "broux",  "name": "Mme Broux",  "hours": { "default": ["08:00", "18:00"] } },
     { "id": "glinka", "name": "Mme Glinka", "hours": { "default": ["08:00", "16:00"] } }
@@ -256,7 +259,10 @@ Contenu type, à adapter :
 
 | Champ | Rôle |
 |---|---|
-| `title` | Nom affiché dans les interfaces |
+| `school` | Nom de l'établissement (en-tête de la page des infirmières et des statistiques) |
+| `title` | Titre affiché **au centre de l'écran** du couloir, entre le logo et l'heure |
+| `logo` | Chemin du logo, relatif au dossier de l'application (PNG, JPG ou SVG). Absent : logo par défaut |
+| `minEventSeconds` | Les changements d'état plus courts que cela (appui par erreur) sont ignorés dans les statistiques |
 | `port` | Port HTTP du serveur (8080 par défaut) |
 | `pin` | Code d'accès facultatif pour modifier un état. Vide = pas de code |
 | `nurses[].id` | Identifiant court, sans espace ni accent |
@@ -267,6 +273,12 @@ Contenu type, à adapter :
 Pour enregistrer dans `nano` : `Ctrl+O` puis `Entrée` ; pour quitter : `Ctrl+X`.
 
 Exemple : horaires réduits le mercredi → `"hours": { "default": ["08:00","18:00"], "wed": ["08:00","12:00"] }`.
+
+**Logo** : depuis le PC, copier le logo de l'établissement dans le dossier `branding` du Pi (le dossier `branding/` n'est pas versionné) :
+```powershell
+scp mon-logo.png <utilisateur>@<IP>:/home/<utilisateur>/cabinet/branding/logo.png
+```
+Pour un autre établissement, voir [ADAPTER.md](ADAPTER.md).
 
 ### 6.3 Vérifier Python
 
@@ -422,7 +434,66 @@ Le lien « Voir les autres cabinets » affiche aussi les autres infirmières (pa
 
 Astuce : sur le téléphone, *Ajouter à l'écran d'accueil* depuis le navigateur crée une icône qui ouvre directement la page.
 
+### 9.8 Enchaîner les élèves : « Élève suivant »
+
+Pendant une consultation, un bouton **Élève suivant (nouvelle consultation)** apparaît :
+
+![Bouton « Élève suivant » pendant une consultation](img/admin-5-consultation.png)
+
+- Quand un élève sort et qu'un autre entre directement, toucher **Élève suivant** : l'écran reste en « En consultation », mais une **nouvelle consultation** est comptée dans les statistiques.
+- Si le cabinet se vide entre deux élèves, repasser en **Présente**, puis **Consultation** au suivant.
+- Toucher plusieurs fois **Consultation** pendant la même consultation ne compte qu'**un seul** élève.
+
+Ce geste alimente directement le nombre d'élèves reçus et la durée moyenne des consultations (section suivante).
+
 ✅ **Vérification** : changer un état depuis un téléphone ; l'écran change en moins d'une seconde.
+
+### 9.9 Consulter les statistiques d'activité
+
+Chaque changement d'état est enregistré dans un journal (base SQLite `data.db` sur le Pi, sans rien à installer). La page de statistiques le restitue :
+
+```
+http://<IP>:8080/stats
+```
+(ou le lien « Statistiques » en bas de la page des infirmières).
+
+Les données de la capture ci-dessous sont **fictives** (démonstration sur 4 semaines) :
+
+![Tableau de bord des statistiques](img/stats-1-tableau-de-bord.png)
+
+**Choisir la période** : *Aujourd'hui*, *7 derniers jours*, *30 derniers jours*, *Ce mois-ci*, *Année scolaire*, ou deux dates au choix puis **Afficher**.
+
+**Ce que la page indique, pour chaque infirmière et pour l'ensemble des cabinets**
+
+| Indicateur | Définition |
+|---|---|
+| **Élèves reçus** | Nombre de consultations ouvertes (bouton *Consultation* ou *Élève suivant*) |
+| **Durée moyenne** | Durée moyenne d'une consultation |
+| **Taux d'occupation** | Temps en consultation ÷ temps de présence au cabinet (présente + consultation + absente un instant) |
+| **Utilisé (fois)** | Nombre de pressions sur chaque état. Les changements **automatiques** (fin de journée, nouveau jour) ne comptent pas |
+| **Temps total** | Temps passé dans chaque état (sauf « Absente », dont le temps inclut nuits et week-ends) |
+
+**Les graphiques**
+- *Élèves reçus par jour* : une barre par infirmière et par jour ;
+- *Affluence selon l'heure* : à quelles heures les consultations commencent (repérer les heures de pointe) ;
+- *Répartition du temps de présence* : part de la présence, de la consultation et des absences brèves.
+
+**Restituer et partager les chiffres**
+
+| Besoin | Moyen |
+|---|---|
+| Ouvrir dans Excel / LibreOffice | **Exporter le résumé (CSV)** : une ligne par infirmière |
+| Analyse détaillée | **Exporter le détail (CSV)** : chaque changement d'état, avec début, fin, durée et origine (manuelle ou automatique) |
+| Rapport pour la direction | **Imprimer / PDF** : la mise en page est prévue pour l'impression ; choisir « Enregistrer au format PDF » |
+
+Les fichiers CSV utilisent le point-virgule et la virgule décimale : ils s'ouvrent directement dans Excel français.
+
+**Précisions utiles**
+- Les mesures commencent au déploiement de cette version : il n'y a pas d'historique avant.
+- Les changements d'état de moins de `minEventSeconds` secondes (10 par défaut), c'est-à-dire un appui par erreur aussitôt corrigé, sont ignorés.
+- Si le Pi est éteint plus de 2 minutes, le journal arrête les mesures à la dernière heure connue (une panne ne gonfle pas les durées).
+- Si un `pin` est défini (étape 8.3), il est demandé pour ouvrir les statistiques.
+- Les données restent sur le Pi (`data.db`). Pour une sauvegarde, copier ce fichier.
 
 ## 10. Mettre à jour l'application
 
@@ -458,6 +529,8 @@ Les fichiers `config.json` et `state.json` ne sont jamais écrasés par une mise
 | Petite pastille orange en bas à droite de l'écran | Connexion au serveur perdue | Elle disparaît toute seule et la page se recharge au retour du serveur ; sinon, redémarrer le service |
 | Les changements n'apparaissent pas | Page ancienne ou serveur bloqué | Recharger la page ; `curl localhost:8080/api/state` sur le Pi |
 | Le code est redemandé en boucle | Code erroné | Recharger la page et ressaisir le bon code |
+| Statistiques vides | Aucune activité sur la période (les mesures commencent à l'installation) | Choisir une autre période ; vérifier que `data.db` existe dans `~/cabinet` |
+| Chiffres étonnants (élèves en trop ou en moins) | Appuis par erreur ou consultation oubliée ouverte | Utiliser « Élève suivant » uniquement pour enchaîner ; le détail CSV montre chaque événement |
 | Message « Serveur injoignable » sur le téléphone | Réseau coupé | Vérifier la connexion du téléphone |
 
 ### Commandes utiles sur le Pi
@@ -524,6 +597,9 @@ Téléphone / PC infirmière ──► /admin ──POST /api/set──┐
 | `config.json` | Infirmières, horaires, code d'accès (non versionné) |
 | `static/index.html` | Page d'affichage de l'écran |
 | `static/admin.html` | Page de commande des infirmières |
+| `static/stats.html` | Tableau de bord des statistiques |
+| `branding/` | Logo de l'établissement (non versionné) |
+| `data.db` | Journal des changements d'état, base SQLite (non versionnée) |
 | `static/common.js` | Statuts, couleurs et fonctions partagées |
 | `deploy/install.sh` | Installation du service et du kiosque |
 

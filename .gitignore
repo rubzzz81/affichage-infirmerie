@@ -1,4 +1,8 @@
 config.json
 state.json
 state.json.tmp
+data.db
+data.db-journal
 __pycache__/
+branding/*
+!branding/README.md

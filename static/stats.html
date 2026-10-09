@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Statistiques - Cabinet d'infirmières</title>
+<style>
+  :root { --ink: #1b1f2a; --muted: #6b7280; --line: #e3e6ec; --bg: #f4f5f8; --card: #fff; --n0: #0f766e; --n1: #7c3aed; --n2: #b45309; --n3: #be185d; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: "Segoe UI", Roboto, system-ui, sans-serif; background: var(--bg); color: var(--ink); padding: 16px 16px 48px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
+  header img { height: 52px; width: auto; max-width: 120px; object-fit: contain; }
+  header h1 { font-size: 22px; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: 14px; }
+  header a { margin-left: auto; color: var(--muted); font-size: 14px; }
+  .card { background: var(--card); border-radius: 18px; padding: 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 20px -10px rgba(0,0,0,.12); margin-bottom: 16px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chip, .btn { appearance: none; border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 9px 15px; font: inherit; font-size: 14px; font-weight: 600; color: var(--ink); cursor: pointer; }
+  .chip.on { background: var(--ink); color: #fff; border-color: var(--ink); }
+  .btn.pri { background: var(--ink); color: #fff; border-color: var(--ink); }
+  input[type=date] { font: inherit; font-size: 14px; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; color: var(--ink); }
+  .spacer { flex: 1; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  h2 { font-size: 18px; font-weight: 650; margin-bottom: 4px; }
+  .hint { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 16px; }
+  .kpi { background: var(--bg); border-radius: 14px; padding: 12px; }
+  .kpi b { display: block; font-size: 26px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
+  .kpi span { font-size: 12px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { text-align: left; font-weight: 600; color: var(--muted); font-size: 12px; padding: 6px 4px; border-bottom: 1px solid var(--line); }
+  td { padding: 8px 4px; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th.r, td.r { text-align: right; }
+  .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 8px; }
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; margin-bottom: 8px; }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  svg text { font-family: inherit; fill: var(--muted); font-size: 11px; }
+  .empty { color: var(--muted); text-align: center; padding: 40px 0; }
+  .note { font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+  @media print {
+    body { background: #fff; padding: 0; } .noprint { display: none !important; }
+    .card { box-shadow: none; border: 1px solid var(--line); break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img id="logo" src="/logo" alt="">
+    <div><h1>Statistiques d'activité</h1><div class="sub" id="school"></div></div>
+    <a class="noprint" href="/admin">← Retour</a>
+  </header>
+
+  <div class="card noprint">
+    <div class="bar" id="presets"></div>
+    <div class="bar" style="margin-top:10px">
+      <label>Du <input type="date" id="from"></label>
+      <label>au <input type="date" id="to"></label>
+      <button class="btn pri" id="apply">Afficher</button>
+      <span class="spacer"></span>
+      <button class="btn" id="csv1">Exporter le résumé (CSV)</button>
+      <button class="btn" id="csv2">Exporter le détail (CSV)</button>
+      <button class="btn" onclick="window.print()">Imprimer / PDF</button>
+    </div>
+  </div>
+
+  <div id="period" class="hint" style="margin:0 4px 12px"></div>
+  <div id="out"></div>
+
+  <p class="note">
+    <b>Comment lire ces chiffres.</b>
+    « Élèves reçus » = nombre de consultations ouvertes (bouton « Consultation », ou « Élève suivant » pour enchaîner).
+    « Utilisé (fois) » = nombre de pressions sur le bouton ; les changements automatiques (fin de journée, nouveau jour) ne comptent pas. Le temps « absente » (nuits, week-ends) n'est pas présenté.
+    « Taux d'occupation » = temps en consultation ÷ temps de présence (présente + consultation + absente un instant).
+    Les changements d'état de moins de <span id="min">10</span> secondes (appui par erreur) sont ignorés.
+  </p>
+</div>
+<script src="/static/common.js"></script>
+<script>
+  const $ = id => document.getElementById(id);
+  const store = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
+                  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} } };
+  const NCOL = ["--n0", "--n1", "--n2", "--n3"].map(v => getComputedStyle(document.documentElement).getPropertyValue(v).trim());
+  const STATES = ["present", "consult", "pause", "absent"], TIMED = ["present", "consult", "pause"];
+  const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+  const today = new Date();
+  const schoolYearStart = new Date(today.getMonth() >= 8 ? today.getFullYear() : today.getFullYear() - 1, 8, 1);
+  const PRESETS = [
+    ["Aujourd'hui", () => [today, today]],
+    ["7 derniers jours", () => [addDays(today, -6), today]],
+    ["30 derniers jours", () => [addDays(today, -29), today]],
+    ["Ce mois-ci", () => [new Date(today.getFullYear(), today.getMonth(), 1), today]],
+    ["Année scolaire", () => [schoolYearStart, today]],
+  ];
+  let current = null, active = 1;
+
+  const fmtDur = s => {
+    if (s == null) return "—";
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m} min`;
+    return `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}`;
+  };
+  const fmtDay = d => new Date(d + "T12:00").toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+  async function api(path, asText) {
+    const go = () => fetch(path, { headers: { "X-Pin": store.get("pin") || "" } });
+    let r = await go();
+    if (r.status === 403) {
+      const pin = prompt("Code d'accès de l'infirmerie :");
+      if (pin === null) throw new Error("annulé");
+      store.set("pin", pin); r = await go();
+      if (r.status === 403) { store.set("pin", null); throw new Error("Code incorrect"); }
+    }
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Erreur " + r.status);
+    return asText ? r : r.json();
+  }
+
+  function query() { return `from=${$("from").value}&to=${$("to").value}`; }
+
+  async function load() {
+    $("out").innerHTML = '<div class="card empty">Chargement…</div>';
+    try { current = await api("/api/stats?" + query()); } catch (e) { $("out").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
+    $("min").textContent = current.minEventSeconds;
+    $("period").textContent = `Période : du ${new Date(current.from + "T12:00").toLocaleDateString("fr-FR", { dateStyle: "long" })} au ${new Date(current.to + "T12:00").toLocaleDateString("fr-FR", { dateStyle: "long" })}`;
+    render(current);
+  }
+
+  function render(s) {
+    const any = s.nurses.some(n => n.attendanceSec > 0 || n.consultations > 0);
+    if (!any) { $("out").innerHTML = '<div class="card empty">Aucune activité enregistrée sur cette période.</div>'; return; }
+    const cards = s.nurses.map((n, i) => `
+      <div class="card">
+        <h2><span class="dot" style="background:${NCOL[i % 4]}"></span>${esc(n.name)}</h2>
+        <div class="kpis">
+          <div class="kpi"><b>${n.consultations}</b><span>élèves reçus</span></div>
+          <div class="kpi"><b>${fmtDur(n.avgConsultSec)}</b><span>durée moyenne</span></div>
+          <div class="kpi"><b>${n.occupancy == null ? "—" : Math.round(n.occupancy * 100) + " %"}</b><span>taux d'occupation</span></div>
+        </div>
+        <table>
+          <tr><th>État</th><th class="r">Utilisé (fois)</th><th class="r">Temps total</th></tr>
+          ${STATES.map(k => `<tr><td><span class="dot" style="background:${STATUS[k].color}"></span>${STATUS[k].label}</td>
+            <td class="r">${n.states[k].count}</td><td class="r">${k === "absent" ? "—" : fmtDur(n.states[k].sec)}</td></tr>`).join("")}
+        </table>
+      </div>`).join("");
+    const t = s.total;
+    $("out").innerHTML = `
+      <div class="card"><div class="bar"><b style="font-size:15px">Tous cabinets</b>
+        <span class="spacer"></span>
+        <span><b style="font-size:22px">${t.consultations}</b> élèves reçus</span> ·
+        <span><b style="font-size:22px">${fmtDur(t.avgConsultSec)}</b> en moyenne</span> ·
+        <span><b style="font-size:22px">${t.occupancy == null ? "—" : Math.round(t.occupancy * 100) + " %"}</b> d'occupation</span></div></div>
+      <div class="grid">${cards}</div>
+      <div class="card"><h2>Élèves reçus par jour</h2><div class="hint">Un groupe de barres par jour, une couleur par infirmière.</div>${legend(s)}<div id="c1"></div></div>
+      <div class="card"><h2>Affluence selon l'heure</h2><div class="hint">Nombre de consultations commencées à chaque heure de la journée, sur toute la période.</div>${legend(s)}<div id="c2"></div></div>
+      <div class="card"><h2>Répartition du temps de présence</h2><div class="hint">Part de chaque état dans le temps où l'infirmière est au cabinet (présente, en consultation, absente un instant).</div><div id="c3"></div></div>`;
+    $("c1").innerHTML = barChart(s.nurses.map(n => n.daily.map(d => d.count)), s.nurses[0].daily.map(d => fmtDay(d.date)), s.nurses.map(n => n.name), "élève(s)");
+    $("c2").innerHTML = barChart(s.nurses.map(n => n.hourly.slice(7, 20)), Array.from({ length: 13 }, (_, i) => `${i + 7}h`), s.nurses.map(n => n.name), "consultation(s)");
+    $("c3").innerHTML = stacked(s);
+  }
+
+  const legend = s => `<div class="legend">${s.nurses.map((n, i) => `<span><i style="background:${NCOL[i % 4]}"></i>${esc(n.name)}</span>`).join("")}</div>`;
+
+  function barChart(series, labels, names, unit) {
+    const W = 1000, H = 260, L = 34, B = 30, T = 14, R = 8, n = labels.length, k = series.length;
+    const max = Math.max(1, ...series.flat()), top = max <= 5 ? max : Math.ceil(max / 5) * 5;
+    const gw = (W - L - R) / n, bw = Math.max(2, Math.min(34, (gw * 0.78) / k));
+    let g = "";
+    for (let i = 0; i <= 4; i++) {
+      const v = Math.round(top * i / 4), y = T + (H - T - B) * (1 - i / 4);
+      g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#e3e6ec"/><text x="${L - 6}" y="${y + 4}" text-anchor="end">${v}</text>`;
+    }
+    const step = Math.ceil(n / 14);
+    labels.forEach((lab, i) => { if (i % step === 0) g += `<text x="${L + gw * (i + .5)}" y="${H - 10}" text-anchor="middle">${esc(lab)}</text>`; });
+    series.forEach((vals, j) => vals.forEach((v, i) => {
+      const h = (H - T - B) * v / top, x = L + gw * (i + .5) - (bw * k) / 2 + bw * j;
+      g += `<rect x="${x}" y="${H - B - h}" width="${bw - 1}" height="${Math.max(h, v ? 1 : 0)}" rx="2" fill="${NCOL[j % 4]}"><title>${esc(names[j])} · ${esc(labels[i])} : ${v} ${unit}</title></rect>`;
+      if (v && gw > 38) g += `<text x="${x + (bw - 1) / 2}" y="${H - B - h - 4}" text-anchor="middle" style="fill:var(--ink)">${v}</text>`;
+    }));
+    return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Graphique en barres">${g}</svg>`;
+  }
+
+  function stacked(s) {
+    return s.nurses.map(n => {
+      const tot = TIMED.reduce((a, k) => a + n.states[k].sec, 0) || 1;
+      const segs = TIMED.map(k => ({ k, p: n.states[k].sec / tot })).filter(x => x.p > 0);
+      return `<div style="margin:10px 0 16px"><div style="font-weight:600;margin-bottom:6px">${esc(n.name)}</div>
+        <div style="display:flex;height:34px;border-radius:10px;overflow:hidden">${segs.map(x =>
+          `<div title="${STATUS[x.k].label} : ${fmtDur(n.states[x.k].sec)} (${Math.round(x.p * 100)} %)" style="width:${x.p * 100}%;background:${STATUS[x.k].color};color:#fff;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;min-width:2px">${x.p > .07 ? Math.round(x.p * 100) + " %" : ""}</div>`).join("")}</div></div>`;
+    }).join("") + `<div class="legend">${TIMED.map(k => `<span><i style="background:${STATUS[k].color}"></i>${STATUS[k].label}</span>`).join("")}</div>`;
+  }
+
+  async function download(path) {
+    try {
+      const r = await api(path, true), blob = await r.blob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = (r.headers.get("Content-Disposition") || "").match(/filename="([^"]+)"/)?.[1] || "export.csv";
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    } catch (e) { alert(e.message); }
+  }
+
+  function setRange([a, b], idx) {
+    $("from").value = iso(a); $("to").value = iso(b); active = idx;
+    document.querySelectorAll("#presets .chip").forEach((c, i) => c.classList.toggle("on", i === idx));
+    load();
+  }
+
+  $("presets").innerHTML = PRESETS.map(([l], i) => `<button class="chip" data-i="${i}">${l}</button>`).join("");
+  $("presets").addEventListener("click", e => { const b = e.target.closest("[data-i]"); if (b) setRange(PRESETS[b.dataset.i][1](), +b.dataset.i); });
+  $("apply").onclick = () => { document.querySelectorAll("#presets .chip").forEach(c => c.classList.remove("on")); load(); };
+  $("csv1").onclick = () => download("/api/stats.csv?" + query());
+  $("csv2").onclick = () => download("/api/events.csv?" + query());
+
+  fetch("/api/state").then(r => r.json()).then(d => {
+    $("school").textContent = `${d.school || ""} · ${d.title || ""}`;
+  }).catch(() => {});
+  const q = new URLSearchParams(location.search);
+  if (q.get("from") && q.get("to")) { $("from").value = q.get("from"); $("to").value = q.get("to"); load(); }
+  else setRange(PRESETS[1][1](), 1);
+</script>
+</body>
+</html>

@@ -11,7 +11,7 @@
   body { font-family: "Segoe UI", Roboto, system-ui, sans-serif; background: var(--bg); color: var(--ink); min-height: 100vh; padding: 16px 16px 40px; }
   .wrap { max-width: 520px; margin: 0 auto; }
   header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-  header img { height: 52px; }
+  header img { height: 52px; width: auto; max-width: 110px; object-fit: contain; }
   header h1 { font-size: 15px; font-weight: 600; color: var(--muted); line-height: 1.25; }
   .card { background: #fff; border-radius: 20px; padding: 18px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 20px -10px rgba(0,0,0,.12); }
   .card h2 { font-size: 22px; font-weight: 650; }
@@ -24,6 +24,7 @@
   .btn.on { opacity: 1; box-shadow: 0 0 0 3px #fff, 0 0 0 6px var(--c); }
   .back { display: none; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
   .back.show { display: block; }
+  .next { appearance: none; border: 1.5px dashed #2563eb; background: #eef4ff; color: #1d4ed8; border-radius: 14px; padding: 12px 14px; width: 100%; margin-top: 10px; font: inherit; font-weight: 650; font-size: 15px; cursor: pointer; }
   .back p, .hours p { font-size: 14px; color: var(--muted); margin-bottom: 8px; }
   .chips { display: flex; flex-wrap: wrap; gap: 8px; }
   .chip { appearance: none; border: 1.5px solid var(--line); background: #fff; border-radius: 999px; padding: 10px 16px; font: inherit; font-size: 15px; font-weight: 600; color: var(--ink); cursor: pointer; }
@@ -46,9 +47,9 @@
 </head>
 <body>
 <div class="wrap">
-  <header><img src="/static/logo.png" alt=""><h1>Infirmerie<br>Mon affichage</h1></header>
+  <header><img id="logo" src="/logo" alt=""><h1 id="head"></h1></header>
   <div id="app"></div>
-  <div class="foot"><a class="link" href="/" target="_blank">Voir l'écran d'affichage</a></div>
+  <div class="foot"><a class="link" href="/" target="_blank">Voir l'écran d'affichage</a> · <a class="link" href="/stats">Statistiques</a></div>
 </div>
 <div class="toast" id="toast"></div>
 <script src="/static/common.js"></script>
@@ -102,6 +103,7 @@
       <h2>${n.name}</h2>
       <div class="now" style="--c:${st.color}">${icon(n.status)}${st.label}${n.status === "pause" && n.back ? " · " + backText(n.back).toLowerCase() : ""}</div>
       <div class="btns">${btns}</div>
+      ${n.status === "consult" ? `<button class="next" data-act="next" data-id="${n.id}">Élève suivant (nouvelle consultation)</button>` : ""}
       <div class="back ${n.status === "pause" ? "show" : ""}">
         <p>Retour prévu (facultatif)</p>
         <div class="chips">${chips}
@@ -123,6 +125,9 @@
 
   function render() {
     if (!data) return;
+    const head = document.getElementById("head");
+    head.textContent = ""; head.append(data.school || "", document.createElement("br"), data.title || "");
+    document.title = (data.title || "Cabinet") + " - Ma présence";
     if (me && !data.nurses.some(n => n.id === me)) me = null;
     if (!me && !showAll) {
       app.innerHTML = `<div class="card"><h2>Qui êtes-vous ?</h2><p style="color:var(--muted);margin:6px 0 14px">À ne faire qu'une fois sur cet appareil.</p>
@@ -141,6 +146,7 @@
     const el = e.target.closest("[data-act]"); if (!el) return;
     const { act, id, v } = el.dataset;
     if (act === "status") send({ id, status: v });
+    else if (act === "next") send({ id, status: "consult", next: true });
     else if (act === "back") send({ id, back: v });
     else if (act === "hours") { editing = id; send({ id, start: document.getElementById("s-" + id).value, end: document.getElementById("e-" + id).value }); }
     else if (act === "resethours") send({ id, resetHours: true });

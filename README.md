@@ -7,8 +7,11 @@ son état en deux touches depuis son téléphone ou son PC.
 - **Libre et gratuit** (licence MIT), **aucune dépendance** : Python 3 standard uniquement.
 - Fonctionne hors Internet, sur le réseau local du lycée.
 - Conçu pour un Raspberry Pi derrière l'écran, branché en HDMI, avec Chromium en mode kiosque.
+- **Statistiques d'activité** : élèves reçus, durée moyenne des consultations, taux d'occupation du cabinet, usage de chaque état ; graphiques, export CSV et PDF.
+- **Réutilisable par n'importe quel établissement** : nom, titre, logo et infirmières se règlent dans `config.json`.
 
 **Nouveau sur le projet ? Suivez le [guide pas à pas](docs/GUIDE.md)** : carte SD, réseau, SSH, installation, kiosque, mise en service.
+**Autre établissement ? Voir [Adapter la solution](docs/ADAPTER.md).**
 
 ![Écran d'affichage](docs/img/affichage-2-consultation-pause.png)
 
@@ -31,22 +34,28 @@ horaires par défaut, pour éviter un « Présente » oublié.
 ```
 Téléphone / PC infirmière ──► /admin ──POST /api/set──┐
                                                        ▼
-                                     server.py (Python, état dans state.json)
-                                                       │ Server-Sent Events (/api/events)
-                                                       ▼
+                                     server.py (Python)
+                                       ├─ état courant : state.json
+                                       ├─ journal des changements : data.db (SQLite)
+                                       │        └──► /stats  (tableau de bord, CSV, PDF)
+                                       │ Server-Sent Events (/api/events)
+                                       ▼
         Chromium kiosque sur le Pi (HDMI) ◄── /  (page d'affichage)
 ```
 
 | Fichier | Rôle |
 |---|---|
-| `server.py` | Serveur HTTP + temps réel (SSE), validation, sauvegarde de l'état |
-| `config.json` | Infirmières, horaires, code d'accès, port (à créer, voir ci-dessous) |
+| `server.py` | Serveur HTTP + temps réel (SSE), validation, journal d'activité, statistiques |
+| `config.json` | Établissement, infirmières, horaires, code d'accès, port (à créer ; non versionné) |
 | `config.example.json` | Modèle de configuration |
-| `static/index.html` | Page d'affichage de l'écran (s'adapte à toute taille d'écran) |
+| `branding/` | Logo de l'établissement (non versionné) |
+| `static/index.html` | Page d'affichage de l'écran (s'adapte à toute taille d'écran et à 1 à 4 infirmières) |
 | `static/admin.html` | Page de commande des infirmières (optimisée mobile) |
+| `static/stats.html` | Tableau de bord des statistiques |
 | `static/common.js` | Statuts, couleurs et fonctions partagées |
-| `static/logo.png` | Logo du lycée |
+| `static/logo-default.svg` | Logo affiché tant qu'aucun logo n'est fourni |
 | `deploy/install.sh` | Installation sur le Pi : service systemd + kiosque |
+| `data.db`, `state.json` | Données d'activité et état courant (créés automatiquement ; non versionnés) |
 
 ## Installation sur le Raspberry Pi
 
@@ -98,9 +107,12 @@ On peut aussi afficher un QR code vers cette adresse près de l'écran.
 
 ```json
 {
-  "title": "Infirmerie",
+  "school": "Lycée Exemple",
+  "title": "Cabinet d'infirmières",
+  "logo": "branding/logo.png",
   "port": 8080,
   "pin": "",
+  "minEventSeconds": 10,
   "nurses": [
     { "id": "dupont", "name": "Mme Dupont",
       "hours": { "default": ["08:00", "18:00"], "wed": ["08:00", "12:00"] } }
@@ -108,7 +120,9 @@ On peut aussi afficher un QR code vers cette adresse près de l'écran.
 }
 ```
 
-- `nurses` : une entrée par infirmière (l'écran s'adapte au nombre). `id` : identifiant court sans espace.
+- `school` : nom de l'établissement. `title` : titre affiché au centre de l'écran. `logo` : chemin du logo (PNG, JPG ou SVG) ; sans fichier, un logo par défaut s'affiche.
+- `minEventSeconds` : les changements d'état plus courts (appui par erreur) sont ignorés dans les statistiques.
+- `nurses` : une entrée par infirmière, une colonne par entrée sur l'écran. `id` : identifiant court sans espace, **à ne pas changer en cours d'année** (les statistiques y sont rattachées).
 - `hours.default` : horaires habituels ; une clé `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun` remplace les horaires pour ce jour.
 - `pin` : code d'accès facultatif. S'il est défini, il est demandé une fois par appareil pour modifier un état.
   **Recommandé** : sans code, toute personne du réseau du lycée qui connaît `/admin` peut changer l'affichage.
@@ -141,14 +155,20 @@ L'état courant est dans `state.json` (non versionné). Pour tout remettre à z�
 | `GET /admin` | Page de commande |
 | `GET /api/state` | État courant (JSON) |
 | `GET /api/events` | Flux temps réel (Server-Sent Events) |
+| `GET /stats` | Tableau de bord des statistiques |
+| `GET /api/stats?from=AAAA-MM-JJ&to=AAAA-MM-JJ` | Statistiques de la période (JSON) |
+| `GET /api/stats.csv`, `GET /api/events.csv` | Exports CSV : résumé par infirmière, détail de chaque changement d'état |
+| `GET /logo` | Logo de l'établissement |
 | `POST /api/set` | Modifier un état. Corps JSON : `{"id":"dupont","status":"pause","back":"14:30","pin":"…"}` ; ou `{"id","start","end"}` pour les horaires ; ou `{"id","resetHours":true}` |
 
-`status` : `present`, `consult`, `pause`, `absent`. `back` n'est accepté que pour `pause`. Les heures sont au format `HH:MM`.
+`status` : `present`, `consult`, `pause`, `absent`. `back` n'est accepté que pour `pause`. Les heures sont au format `HH:MM`. `"next": true` avec `"status":"consult"` ouvre une nouvelle consultation (élève suivant). Les routes `/api/stats*` et `/api/events.csv` attendent le code d'accès dans l'en-tête `X-Pin` s'il est défini.
 
 ## Limites connues
 
 - Pas d'authentification individuelle : un code partagé facultatif (`pin`), non chiffré (HTTP). Adapté à un réseau interne de confiance, pas à Internet.
-- Pas d'historique des changements.
+- Les statistiques mesurent ce que les infirmières déclarent avec les boutons : une consultation oubliée ouverte ou un appui manquant fausse les chiffres. Elles ne remplacent pas un registre officiel.
+- Les mesures commencent au déploiement de la fonction de statistiques : pas d'historique antérieur.
+- Au-delà de 4 infirmières sur un même écran, les textes deviennent petits.
 - Les horaires sont par jour de la semaine ; pas de calendrier (vacances, jours fériés).
 
 ## Licence
