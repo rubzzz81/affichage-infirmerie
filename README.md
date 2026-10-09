@@ -17,7 +17,7 @@ son état en deux touches depuis son téléphone ou son PC.
 | Absente temporairement | orange | ABSENTE TEMPORAIREMENT, avec « Retour vers 14h30 » (facultatif) |
 | Absente (toute la journée) | rouge | ABSENTE |
 
-Chaque nuit (changement de date), tout le monde repasse en « Absente » avec les
+**À l'heure de fin de ses horaires, l'infirmière repasse automatiquement en « Absente »** (une seule fois : si elle se remet « Présente » après son heure de fin, son choix est respecté ; si elle allonge ses horaires, la fermeture est réarmée). Chaque nuit (changement de date), tout le monde repasse aussi en « Absente » avec les
 horaires par défaut, pour éviter un « Présente » oublié.
 
 ## Architecture

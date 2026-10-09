@@ -123,17 +123,47 @@ def apply_change(body):
             if not (TIME_RE.match(str(body["start"])) and TIME_RE.match(str(body["end"]))):
                 return 400, "Horaires invalides"
             s["hours"] = [body["start"], body["end"]]
+        # Horaires modifiés : réarme la fermeture automatique. Après l'heure de fin,
+        # un choix manuel est respecté (pas de remise en 'absente' immédiate).
+        if body.get("resetHours") or "start" in body:
+            s["closed"] = False
+        elif "status" in body:
+            s["closed"] = after_hours(nid)
         s["updated"] = datetime.datetime.now().strftime("%H:%M")
         save_state()
         broadcast()
     return 200, "ok"
 
 
+def after_hours(nurse_id):
+    s = state["nurses"].get(nid := nurse_id, {})
+    now = datetime.datetime.now().strftime("%H:%M")
+    return now >= (s.get("hours") or default_hours(NURSES[nid], datetime.date.today()))[1]
+
+
+def auto_close():
+    """À l'heure de fin, passe en 'absente' (une seule fois par fin de journée)."""
+    changed = False
+    for nid in NURSES:
+        s = state["nurses"].setdefault(nid, {"status": "absent"})
+        if s.get("closed") or not after_hours(nid):
+            continue
+        s["closed"] = True
+        if s.get("status") != "absent":
+            s["status"] = "absent"
+            s.pop("back", None)
+            s["updated"] = datetime.datetime.now().strftime("%H:%M")
+        changed = True
+    if changed:
+        save_state()
+    return changed
+
+
 def day_watcher():
     stop = threading.Event()
-    while not stop.wait(30):
+    while not stop.wait(15):
         with lock:
-            if roll_day():
+            if roll_day() | auto_close():
                 broadcast()
 
 
