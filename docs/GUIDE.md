@@ -390,7 +390,7 @@ Le Pi est joignable par tout le réseau du lycée, **élèves compris**. Sans pr
 
 ✅ **Vérification** : `https://pi-infirmerie-admin.local:8443/` affiche l'écran de connexion, sans avertissement du navigateur.
 
-Tout le détail (blocage après des essais ratés, durée des sessions, journal des connexions, code oublié, pare-feu, renouvellement du certificat) est dans **[SECURITE.md](SECURITE.md)**.
+Tout le détail (blocage après des essais ratés, durée des sessions, journal des connexions, code oublié, pare-feu, renouvellement du certificat) est dans **[SECURITE.md](SECURITE.md)**. Pour rendre le panneau joignable depuis **Internet**, lisez **[INTERNET.md](INTERNET.md)** : il demande des protections supplémentaires (second facteur, pare-feu, mises à jour).
 
 ### 8.4 Accès à distance au bureau du Pi (VNC)
 

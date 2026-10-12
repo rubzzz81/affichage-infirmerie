@@ -1,5 +1,7 @@
 # Sécurité et accès
 
+> **Accès depuis Internet** (infirmières hors du réseau du lycée) : voir [INTERNET.md](INTERNET.md), qui ajoute second facteur, masquage des pages publiques, limites de connexions et règles de pare-feu.
+
 Le Pi est joignable par tout le réseau du lycée, **élèves compris**. Ce document décrit
 comment l'application est protégée, ce qu'il faut faire pour la mettre en service
 correctement, et ce qui reste à la charge du service informatique.
@@ -240,7 +242,7 @@ Des échecs répétés depuis une adresse inconnue sont à signaler à la direct
 | Codes hachés par scrypt, `config.json` en droits 600 | Une copie du fichier ne livre pas les codes |
 | Aucun compte sans code | Rien n'est ouvert par défaut |
 
-Ces protections sont vérifiées par une suite de **56 contrôles automatiques** (`tests/test_security.py`, à lancer dans une copie du dossier) et par des essais dans un navigateur :
+Ces protections sont vérifiées par une suite de **125 contrôles automatiques** (`tests/test_security.py` : 73, réseau interne ; `tests/test_internet.py` : 52, accès externe ; à lancer dans une copie du dossier) et par des essais dans un navigateur :
 sans session, avec une session d'infirmière, avec une session
 d'administration, avec un mauvais code, avec une origine étrangère, après un changement de code, etc.
 

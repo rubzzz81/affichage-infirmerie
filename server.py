@@ -19,13 +19,16 @@ import csv
 import datetime
 import hashlib
 import io
+import ipaddress
 import json
 import mimetypes
 import os
 import queue
 import re
 import sqlite3
+import socket
 import ssl
+import struct
 import sys
 import threading
 import time
@@ -86,6 +89,60 @@ if DOMAIN:
     else:
         HOSTS = {"admin": f"admin.{DOMAIN}", "stats": f"stats.{DOMAIN}"}
     HOSTS.update({k: str(v).lower() for k, v in (CONFIG.get("hosts") or {}).items() if k in HOSTS})
+
+# Réseau interne / externe. Une requête dont l'adresse source n'est pas dans "internalNetworks" est
+# « externe » (Internet) : second facteur exigé, aucune donnée lisible sans connexion, liste des
+# comptes masquée, limites de connexions plus strictes. Le pare-feu doit conserver l'adresse source
+# réelle des clients (pas de NAT source), sinon tout paraîtrait venir du pare-feu.
+INTERNAL_NETS = [ipaddress.ip_network(n, strict=False) for n in CONFIG.get(
+    "internalNetworks", ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "::1/128", "fe80::/10"])]
+PUBLIC_DISPLAY = CONFIG.get("publicDisplay", "internal")    # "internal" : l'écran public est lisible depuis le réseau interne ; "local" : seulement depuis le Pi (kiosque)
+LIMITS = {"total": 400, "perIpInternal": 100, "perIpExternal": 20, "sseTotal": 100, "sseExternal": 3, "sseInternal": 20}
+LIMITS.update(CONFIG.get("limits") or {})
+
+
+def default_gateway():
+    """Adresse IPv4 de la passerelle par défaut du Pi (lue dans /proc/net/route), ou None."""
+    try:
+        with open("/proc/net/route", encoding="ascii") as f:
+            next(f)
+            for line in f:
+                cols = line.split()
+                if cols[1] == "00000000" and int(cols[3], 16) & 2:
+                    return socket.inet_ntoa(struct.pack("<L", int(cols[2], 16)))
+    except (OSError, ValueError, IndexError, StopIteration):
+        pass
+    return None
+
+
+# Toujours « externes », même si l'adresse est privée : le trafic qui arrive AVEC l'adresse de la
+# passerelle est du trafic traduit par le pare-feu (NAT source), donc d'origine inconnue, peut-être
+# Internet. Sans cette règle, une erreur de NAT ferait passer Internet pour le réseau interne.
+EXTERNAL_NETS = [ipaddress.ip_network(n, strict=False) for n in CONFIG.get("externalAddresses", [])]
+_gw = default_gateway() if CONFIG.get("gatewayIsExternal", True) else None
+if _gw:
+    EXTERNAL_NETS.append(ipaddress.ip_network(_gw + "/32"))
+
+
+def is_internal(ip):
+    """Vrai si l'adresse appartient au réseau interne (ou à la machine elle-même)."""
+    try:
+        addr = ipaddress.ip_address(ip.split("%")[0])
+    except ValueError:
+        return False
+    if getattr(addr, "ipv4_mapped", None):
+        addr = addr.ipv4_mapped
+    if any(addr in net for net in EXTERNAL_NETS):
+        return False
+    return any(addr in net for net in INTERNAL_NETS)
+
+
+def is_loopback(ip):
+    try:
+        return ipaddress.ip_address(ip.split("%")[0]).is_loopback
+    except ValueError:
+        return False
+
 
 lock = threading.Lock()
 subscribers = set()
@@ -250,6 +307,7 @@ def watcher():
     stop = threading.Event()
     while not stop.wait(15):
         AUTH.purge()                  # sessions expirées, blocages anciens
+        reload_cert_if_changed()      # certificat renouvelé
         with lock:
             heartbeat()
             if roll_day() | auto_close():
@@ -434,22 +492,33 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
                                "script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; form-action 'self'",
+    "Cross-Origin-Opener-Policy": "same-origin",
+    "Cross-Origin-Resource-Policy": "same-origin",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=()",
 }
+HSTS = CONFIG.get("hsts", True)       # force le HTTPS dans le navigateur pendant 1 an après la première visite
 MAX_BODY = 4096
 
 
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "Cabinet/3.0"
-    timeout = 60                      # coupe les connexions inactives (clients lents ou malveillants)
+    timeout = 30                      # coupe les connexions inactives (clients lents ou malveillants)
 
     def log_message(self, *args):
         pass
+
+    def version_string(self):
+        return "cabinet"              # ne révèle ni la version de Python ni celle du serveur
 
     # ------------------------------------------------------------- utilitaires
     @property
     def is_tls(self):
         return bool(getattr(self.server, "is_tls", False))
+
+    @property
+    def external(self):
+        """Vrai si la requête vient de l'extérieur du réseau interne (Internet)."""
+        return not is_internal(self.client_address[0])
 
     def send_bytes(self, code, body, ctype, extra=None, cache="no-cache"):
         self.send_response(code)
@@ -458,6 +527,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Cache-Control", cache)
         for k, v in SECURITY_HEADERS.items():
             self.send_header(k, v)
+        if HSTS and self.is_tls:
+            self.send_header("Strict-Transport-Security", "max-age=31536000")
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
@@ -585,6 +656,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_bytes(200, ("﻿" + body).encode("utf-8"), "text/csv; charset=utf-8",
                         {"Content-Disposition": f'attachment; filename="{name}"'}, cache="no-store")
 
+    def may_read_state(self):
+        """Écran public (état courant, flux temps réel). Le Pi lui-même (kiosque) : toujours. Le réseau
+        interne : si "publicDisplay" vaut "internal" (défaut). Depuis l'extérieur : jamais sans connexion."""
+        ip = self.client_address[0]
+        if is_loopback(ip) or (PUBLIC_DISPLAY == "internal" and is_internal(ip)):
+            return True
+        return self.session() is not None
+
+    def hidden_from_outside(self):
+        """Aide à l'installation du certificat : réservée au réseau interne (inutile et superflue sur Internet)."""
+        if self.external:
+            self.send_json(404, {"error": "introuvable"})
+            return True
+        return False
+
     # ------------------------------------------------------------- GET
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -593,13 +679,18 @@ class Handler(BaseHTTPRequestHandler):
             role = self.host_role()
             if role in ("admin", "stats"):               # sous-domaine : le site est à la racine
                 self.serve_page(role)
+            elif not self.may_read_state():               # écran public vu d'Internet : on renvoie vers la connexion
+                self.send_bytes(302, b"", "text/plain", {"Location": site_url(HOSTS["admin"]) if HOSTS else "/admin"})
             else:
                 self.send_static("index.html")
         elif path in ("/admin", "/stats"):
             self.serve_page(path[1:])
         elif path == "/certificat":                      # aide à l'installation de l'autorité locale
-            self.send_static("certificat.html")
+            if not self.hidden_from_outside():
+                self.send_static("certificat.html")
         elif path == "/api/ca":
+            if self.hidden_from_outside():
+                return
             ca = os.path.join(BASE, "certs", "ca.crt")
             if not os.path.isfile(ca):
                 return self.send_json(404, {"error": "introuvable"})
@@ -609,16 +700,22 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/logo":
             self.send_path(logo_path())
         elif path == "/ca.crt":        # autorité de certification locale, à installer sur les appareils
+            if self.hidden_from_outside():
+                return
             ca = os.path.join(BASE, "certs", "ca.crt")
             self.send_path(ca) if os.path.isfile(ca) else self.send_json(404, {"error": "introuvable"})
         elif path == "/api/state":
+            if not self.may_read_state():
+                return self.send_json(401, {"error": "Connexion requise."})
             with lock:
                 roll_day()
                 self.send_json(200, snapshot())
         elif path == "/api/events":
+            if not self.may_read_state():
+                return self.send_json(401, {"error": "Connexion requise."})
             self.stream_events()
         elif path == "/api/accounts":
-            self.send_json(200, AUTH.public_accounts())
+            self.send_json(200, AUTH.public_accounts(self.external))
         elif path == "/api/me":
             if not self.require_tls():
                 return
@@ -626,7 +723,7 @@ class Handler(BaseHTTPRequestHandler):
             if not sess:
                 return self.send_json(401, {"ok": False})
             self.send_json(200, {"ok": True, "role": sess["role"], "id": sess["id"], "name": sess["name"],
-                                 "insecure": not self.is_tls})
+                                 "insecure": not self.is_tls, "external": sess["external"]})
         elif path in ("/api/stats", "/api/stats.csv", "/api/events.csv"):
             if self.require_tls():
                 self.stats_request(parsed, {"/api/stats": "json", "/api/stats.csv": "summary",
@@ -657,7 +754,8 @@ class Handler(BaseHTTPRequestHandler):
             role, ident = body.get("role"), body.get("id")
             if role not in ("nurse", "admin") or not isinstance(ident, str):
                 return self.send_json(400, {"error": "Requête invalide."})
-            ok, data = AUTH.login(role, ident, body.get("pin"), self.client_address[0])
+            ok, data = AUTH.login(role, ident, body.get("pin"), self.client_address[0],
+                                 external=self.external, code=body.get("code"))
             if not ok:
                 return self.send_json(429 if data.get("retry") else 401, {"ok": False, **data})
             self.send_json(200, {"ok": True, "role": data["role"], "id": data["id"], "name": data["name"]},
@@ -676,18 +774,27 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json(code, {"ok": code == 200, "error": None if code == 200 else msg})
 
     def stream_events(self):
+        ip = self.client_address[0]
+        cap = LIMITS["sseInternal"] if is_internal(ip) else LIMITS["sseExternal"]
+        with SSE_LOCK:                   # un flux ouvert occupe un fil : on en limite le nombre (total et par adresse)
+            if SSE["total"] >= LIMITS["sseTotal"] or SSE["ip"].get(ip, 0) >= cap:
+                return self.send_json(429, {"error": "Trop de flux ouverts."})
+            SSE["total"] += 1
+            SSE["ip"][ip] = SSE["ip"].get(ip, 0) + 1
         q = queue.Queue()
-        self.send_response(200)
-        self.send_header("Content-Type", "text/event-stream")
-        self.send_header("Cache-Control", "no-cache")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
-        with lock:
-            roll_day()
-            q.put(json.dumps(snapshot(), ensure_ascii=False))
-            subscribers.add(q)
+        subscribed = False
         try:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Connection", "keep-alive")
+            self.end_headers()
+            with lock:
+                roll_day()
+                q.put(json.dumps(snapshot(), ensure_ascii=False))
+                subscribers.add(q)
+                subscribed = True
             while True:
                 try:
                     self.wfile.write(f"data: {q.get(timeout=15)}\n\n".encode())
@@ -697,7 +804,17 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             pass
         finally:
-            subscribers.discard(q)
+            if subscribed:
+                subscribers.discard(q)
+            with SSE_LOCK:
+                SSE["total"] -= 1
+                SSE["ip"][ip] = SSE["ip"].get(ip, 1) - 1
+                if SSE["ip"][ip] <= 0:
+                    SSE["ip"].pop(ip, None)
+
+
+SSE = {"total": 0, "ip": {}}
+SSE_LOCK = threading.Lock()
 
 
 class Server(ThreadingHTTPServer):
@@ -706,13 +823,75 @@ class Server(ThreadingHTTPServer):
     request_queue_size = 64
     is_tls = False
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.conn_lock = threading.Lock()
+        self.conns = {}               # adresse -> connexions ouvertes
+        self.conn_total = 0
+
+    def process_request(self, request, client_address):
+        """Limite le nombre de connexions simultanées (total et par adresse) : un client qui en ouvre
+        des milliers ne peut pas saturer le Pi. Au-delà, la connexion est fermée tout de suite."""
+        ip = client_address[0]
+        cap = LIMITS["perIpInternal"] if is_internal(ip) else LIMITS["perIpExternal"]
+        with self.conn_lock:
+            if self.conn_total >= LIMITS["total"] or self.conns.get(ip, 0) >= cap:
+                refused = True
+            else:
+                refused = False
+                self.conns[ip] = self.conns.get(ip, 0) + 1
+                self.conn_total += 1
+        if refused:
+            self.shutdown_request(request)
+            return
+        super().process_request(request, client_address)
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            ip = client_address[0]
+            with self.conn_lock:
+                self.conn_total -= 1
+                self.conns[ip] = self.conns.get(ip, 1) - 1
+                if self.conns[ip] <= 0:
+                    self.conns.pop(ip, None)
+
     def handle_error(self, request, client_address):
         pass          # déconnexions brusques, certificat refusé par un client... : sans importance
 
 
+TLS_CTX = None                # contexte TLS du serveur HTTPS (rechargé quand le certificat change)
+TLS_FILES = ("", "")
+TLS_MTIME = 0
+
+
+def tls_mtime():
+    try:
+        return max(os.path.getmtime(TLS_FILES[0]), os.path.getmtime(TLS_FILES[1]))
+    except OSError:
+        return 0
+
+
+def reload_cert_if_changed():
+    """Renouvellement du certificat (Let's Encrypt, setup-https.sh...) pris en compte sans redémarrer :
+    les nouvelles connexions utilisent le nouveau certificat."""
+    global TLS_MTIME
+    if TLS_CTX is None:
+        return
+    m = tls_mtime()
+    if m and m != TLS_MTIME:
+        try:
+            TLS_CTX.load_cert_chain(*TLS_FILES)
+            TLS_MTIME = m
+            print("[sécurité] certificat HTTPS rechargé", flush=True)
+        except (ssl.SSLError, OSError) as e:
+            print(f"[sécurité] certificat HTTPS illisible, l'ancien est conservé ({e})", flush=True)
+
+
 def start_tls():
     """Démarre le serveur HTTPS si config.json le demande et si le certificat existe."""
-    global TLS_ACTIVE
+    global TLS_ACTIVE, TLS_CTX, TLS_FILES, TLS_MTIME
     if not TLS:
         return
     cert, key = (os.path.join(BASE, TLS.get("cert", "certs/server.crt")),
@@ -723,8 +902,10 @@ def start_tls():
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.minimum_version = ssl.TLSVersion.TLSv1_2
     ctx.load_cert_chain(cert, key)
+    TLS_CTX, TLS_FILES = ctx, (cert, key)
+    TLS_MTIME = tls_mtime()
     port = int(TLS.get("port", 8443))
-    srv = Server(("0.0.0.0", port), Handler)
+    srv = Server((CONFIG.get("tlsBind", "0.0.0.0"), port), Handler)
     srv.is_tls = True
     # la poignée de main TLS se fait dans le fil de la requête : un client lent ne bloque pas l'accueil
     srv.socket = ctx.wrap_socket(srv.socket, server_side=True, do_handshake_on_connect=False)
@@ -758,4 +939,5 @@ if __name__ == "__main__":
     threading.Thread(target=watcher, daemon=True).start()
     port = int(os.environ.get("PORT", CONFIG.get("port", 8080)))
     print(f"Cabinet en écoute sur le port {port}", flush=True)
-    Server(("0.0.0.0", port), Handler).serve_forever()
+    # "httpBind": "127.0.0.1" : le port HTTP n'est joignable que depuis le Pi (kiosque) ; seul le port HTTPS est exposé
+    Server((CONFIG.get("httpBind", "0.0.0.0"), port), Handler).serve_forever()

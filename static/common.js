@@ -51,9 +51,11 @@ const Auth = {
 
   // Affiche l'écran de connexion dans `box` ; la promesse est résolue avec le compte connecté.
   async login(box, { tab = "nurse", nurse = "" } = {}) {
-    let acc = { nurses: [], admins: [] };
-    try { acc = await (await fetch("/api/accounts", { cache: "no-store" })).json(); } catch (e) {}
-    const st = { tab: tab === "admin" && !acc.admins.length ? "nurse" : tab,
+    let acc = { nurses: [], admins: [], hidden: false, totp: false };
+    try { acc = Object.assign(acc, await (await fetch("/api/accounts", { cache: "no-store" })).json()); } catch (e) {}
+    // Depuis Internet, le serveur ne donne aucun nom de compte : on saisit son identifiant (acc.hidden).
+    const hasAdmin = acc.hidden ? acc.hasAdmins !== false : acc.admins.length > 0;
+    const st = { tab: tab === "admin" && !hasAdmin ? "nurse" : tab, ident: nurse || "",
                  nurse: acc.nurses.some(n => n.id === nurse) ? nurse : "", admin: (acc.admins[0] || {}).id || "" };
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
     return new Promise(resolve => {
@@ -65,26 +67,32 @@ const Auth = {
             ${location.protocol !== "https:" ? '<p class="lg-warn">⚠ Connexion non chiffrée : ne saisissez pas votre code sur cette page. Demandez l\'accès en HTTPS.</p>' : ""}
             <div class="lg-seg" role="tablist">
               <button type="button" data-tab="nurse" class="${st.tab === "nurse" ? "on" : ""}">Infirmière</button>
-              <button type="button" data-tab="admin" class="${st.tab === "admin" ? "on" : ""}" ${acc.admins.length ? "" : "disabled"}>Administration</button>
+              <button type="button" data-tab="admin" class="${st.tab === "admin" ? "on" : ""}" ${hasAdmin ? "" : "disabled"}>Administration</button>
             </div>
-            ${list.length > 1 || st.tab === "nurse" ? `<p class="lg-lbl">${st.tab === "nurse" ? "Qui êtes-vous ?" : "Compte"}</p>
+            ${acc.hidden
+              ? `<label class="lg-lbl" for="lg-id">Identifiant</label>
+                 <input id="lg-id" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" maxlength="64" value="${esc(st.ident)}" required>`
+              : list.length > 1 || st.tab === "nurse" ? `<p class="lg-lbl">${st.tab === "nurse" ? "Qui êtes-vous ?" : "Compte"}</p>
               <div class="lg-who">${list.map(a => `<button type="button" data-id="${esc(a.id)}" class="${a.id === sel ? "on" : ""}">${esc(a.name)}</button>`).join("")}</div>`
               : `<p class="lg-lbl">Compte : <b>${esc((list[0] || {}).name || "—")}</b></p>`}
             <label class="lg-lbl" for="lg-pin">Code personnel</label>
             <input id="lg-pin" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" maxlength="64" required>
+            ${acc.totp ? `<label class="lg-lbl" for="lg-otp">Code de l'application d'authentification</label>
+            <input id="lg-otp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="10" required>` : ""}
             <p class="lg-err" role="alert">${esc(msg)}</p>
             <button class="lg-go" type="submit">Se connecter</button>
           </form>`;
-        const pin = box.querySelector("#lg-pin");
-        if (sel) pin.focus();
-        box.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { st.tab = b.dataset.tab; draw(); });
+        const pin = box.querySelector("#lg-pin"), idBox = box.querySelector("#lg-id"), otp = box.querySelector("#lg-otp");
+        if (acc.hidden ? st.ident : sel) pin.focus(); else if (idBox) idBox.focus();
+        box.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { if (idBox) st.ident = idBox.value; st.tab = b.dataset.tab; draw(); });
         box.querySelectorAll(".lg-who [data-id]").forEach(b => b.onclick = () => { st[st.tab === "nurse" ? "nurse" : "admin"] = b.dataset.id; draw(); });
         box.querySelector("form").onsubmit = async e => {
           e.preventDefault();
-          const id = st.tab === "nurse" ? st.nurse : st.admin;
-          if (!id) return draw("Choisissez d'abord votre nom.");
+          const id = acc.hidden ? idBox.value.trim() : (st.tab === "nurse" ? st.nurse : st.admin);
+          if (!id) return draw(acc.hidden ? "Saisissez votre identifiant." : "Choisissez d'abord votre nom.");
+          if (idBox) st.ident = id;
           const go = box.querySelector(".lg-go"); go.disabled = true; go.textContent = "Vérification…";
-          const { status, json } = await Auth.post("/api/login", { role: st.tab, id, pin: pin.value });
+          const { status, json } = await Auth.post("/api/login", { role: st.tab, id, pin: pin.value, code: otp ? otp.value : undefined });
           if (status === 200 && json.ok) return resolve(await Auth.me());
           draw(json.error || (status === 403 ? "Connexion HTTPS requise." : "Connexion impossible."));
         };
@@ -109,6 +117,7 @@ const Auth = {
   .lg-who button.on { border-color: #1b1f2a; background: #1b1f2a; color: #fff; }
   .lg input { width: 100%; font: inherit; font-size: 20px; letter-spacing: .15em; padding: 13px 14px; border: 1.5px solid #e3e6ec; border-radius: 14px; box-sizing: border-box; }
   .lg input:focus { outline: 2px solid #2563eb; border-color: transparent; }
+  .lg #lg-id { letter-spacing: normal; font-size: 18px; }
   .lg-err { color: #b91c1c; font-size: 14px; min-height: 20px; margin: 8px 0 0; }
   .lg-warn { background: #fff4e0; color: #8a4b00; border-radius: 10px; padding: 10px 12px; font-size: 14px; margin: 0 0 12px; }
   .lg-go { appearance: none; border: 0; width: 100%; margin-top: 8px; padding: 15px; border-radius: 14px; background: #1e9e57; color: #fff; font: inherit; font-size: 17px; font-weight: 650; cursor: pointer; }

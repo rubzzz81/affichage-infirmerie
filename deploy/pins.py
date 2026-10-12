@@ -8,10 +8,16 @@
   python3 deploy/pins.py generate --all             ... pour tous les comptes (remplace les codes)
   python3 deploy/pins.py add-admin direction "Direction"   créer un compte administration
   python3 deploy/pins.py remove-admin direction
+  python3 deploy/pins.py totp nurse:broux           activer le second facteur (application d'authentification)
+  python3 deploy/pins.py totp-remove nurse:broux    le retirer
 
 Les codes sont stockés hachés (scrypt) dans config.json, jamais en clair. Le serveur prend
 les changements en compte immédiatement (sans redémarrage) et ferme les sessions ouvertes
 du compte modifié.
+
+Second facteur : obligatoire pour toute connexion venue de l'extérieur du réseau interne
+(Internet). Le secret doit pouvoir être relu par le serveur : il est stocké dans config.json
+(droits 600, jamais versionné), comme la clé du certificat.
 """
 import getpass
 import json
@@ -21,7 +27,7 @@ import sys
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE)
-from auth import MIN_PIN_LENGTH, hash_pin  # noqa: E402
+from auth import MIN_PIN_LENGTH, hash_pin, new_totp_secret, totp_check, totp_uri  # noqa: E402
 
 CONFIG = os.path.join(BASE, "config.json")
 
@@ -72,10 +78,39 @@ def set_pin(a, pin):
 
 
 def cmd_list(cfg):
-    print(f"{'Compte':28} {'Nom':24} Code")
+    print(f"{'Compte':28} {'Nom':24} {'Code':28} Second facteur")
     for k, a in accounts(cfg):
         state = "défini (haché)" if a.get("pinHash") else ("EN CLAIR dans le fichier !" if a.get("pin") else "non défini")
-        print(f"{k:28} {a.get('name', ''):24} {state}")
+        print(f"{k:28} {a.get('name', ''):24} {state:28} {'activé' if a.get('totpSecret') else 'non (pas de connexion depuis Internet)'}")
+
+
+def cmd_totp(cfg, key):
+    """Inscrit une application d'authentification : on affiche une clé, puis la personne saisit le code
+    que l'application affiche. Rien n'est enregistré tant que ce code n'est pas bon."""
+    a = find(cfg, key)
+    secret = new_totp_secret()
+    print(f"Second facteur pour {key} ({a.get('name', '')}).\n")
+    print("1. Sur le téléphone de cette personne, installer une application d'authentification")
+    print("   (FreeOTP, Aegis, Google Authenticator, Microsoft Authenticator, 2FAS...).")
+    print("2. Ajouter un compte « saisie manuelle / clé de configuration », type : basé sur le temps (TOTP).")
+    print("3. Saisir cette clé (les espaces sont facultatifs) :\n")
+    print("      " + " ".join(secret[i:i + 4] for i in range(0, len(secret), 4)) + "\n")
+    print("   (Lien d'enregistrement direct, pour qui sait l'ouvrir : " + totp_uri(secret, a.get("name", a["id"])) + ")\n")
+    print("Cette clé est un secret : ne la partagez pas, et effacez ce terminal ensuite (commande : clear).")
+    code = input("\n4. Saisir le code à 6 chiffres affiché par l'application : ").strip()
+    if totp_check(secret, code) is None:
+        sys.exit("Code incorrect : rien n'a été enregistré. Vérifiez l'heure du téléphone (réglage automatique), puis recommencez.")
+    a["totpSecret"] = secret
+    save(cfg)
+    print(f"Second facteur activé pour {key}. Ses sessions ouvertes sont fermées ; connexion depuis Internet possible.")
+
+
+def cmd_totp_remove(cfg, key):
+    a = find(cfg, key)
+    if not a.pop("totpSecret", None):
+        sys.exit("Ce compte n'a pas de second facteur.")
+    save(cfg)
+    print(f"Second facteur retiré pour {key} : ce compte ne peut plus se connecter depuis Internet.")
 
 
 def cmd_set(cfg, key):
@@ -143,6 +178,10 @@ def main(argv):
         cmd_add_admin(cfg, argv[1], argv[2])
     elif cmd == "remove-admin" and len(argv) == 2:
         cmd_remove_admin(cfg, argv[1])
+    elif cmd == "totp" and len(argv) == 2:
+        cmd_totp(cfg, argv[1])
+    elif cmd == "totp-remove" and len(argv) == 2:
+        cmd_totp_remove(cfg, argv[1])
     else:
         sys.exit(__doc__)
 

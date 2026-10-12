@@ -125,6 +125,8 @@ systemctl --user restart cabinet.service
 ```
 Détail, installation du certificat sur les appareils, pare-feu, codes oubliés : **[docs/SECURITE.md](docs/SECURITE.md)**.
 
+**Accès depuis Internet** (un seul port HTTPS, second facteur obligatoire, rien de lisible sans connexion, limites de connexions, vrai certificat, règles de pare-feu) : **[docs/INTERNET.md](docs/INTERNET.md)**. Un vérificateur à lancer depuis l'extérieur : `python3 tools/check-exposure.py <adresse> <port>`.
+
 ## Configuration (`config.json`)
 
 ```json
