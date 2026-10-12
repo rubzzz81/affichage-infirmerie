@@ -3,8 +3,11 @@
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
-  "pin": "",
   "minEventSeconds": 10,
+  "sessionHours": { "nurse": 12, "admin": 2 },
+  "admins": [
+    { "id": "administration", "name": "Administration" }
+  ],
   "nurses": [
     {
       "id": "dupont",

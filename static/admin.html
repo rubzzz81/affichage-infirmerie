@@ -46,21 +46,19 @@
 </style>
 </head>
 <body>
+<body>
 <div class="wrap">
   <header><img id="logo" src="/logo" alt=""><h1 id="head"></h1></header>
   <div id="app"></div>
-  <div class="foot"><a class="link" href="/" target="_blank">Voir l'écran d'affichage</a> · <a class="link" id="statlink" href="/stats">Statistiques</a></div>
+  <div class="foot" id="foot"></div>
 </div>
 <div class="toast" id="toast"></div>
 <script src="/static/common.js"></script>
 <script>
   const app = document.getElementById("app");
-  const store = { get: k => { try { return localStorage.getItem(k); } catch (e) { return null; } },
-                  set: (k, v) => { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} } };
-  // Lien personnel : /admin?me=<id> sélectionne l'infirmière (et ?hours ouvre les horaires).
+  // /admin?me=<id> présélectionne le nom sur l'écran de connexion (et ?hours ouvre les horaires).
   const params = new URLSearchParams(location.search);
-  if (params.get("me")) store.set("me", params.get("me"));
-  let data = null, me = store.get("me"), showAll = false, editing = params.has("hours") ? me : false;
+  let data = null, me = null, who = null, editing = params.has("hours");
 
   function toast(msg, err) {
     const t = document.getElementById("toast");
@@ -69,17 +67,11 @@
   }
 
   async function send(payload) {
-    payload.pin = store.get("pin") || "";
-    let r = await fetch("/api/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).catch(() => null);
-    if (r && r.status === 403) {
-      const pin = prompt("Code d'accès de l'infirmerie :");
-      if (pin === null) return;
-      store.set("pin", pin); payload.pin = pin;
-      r = await fetch("/api/set", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).catch(() => null);
-    }
+    let r = null;
+    try { r = await Auth.post("/api/set", payload); } catch (e) {}
     if (!r) return toast("Serveur injoignable", true);
-    const j = await r.json();
-    if (!j.ok) { if (r.status === 403) store.set("pin", null); return toast(j.error, true); }
+    if (r.status === 401) { toast("Session expirée : reconnectez-vous", true); return setTimeout(() => location.reload(), 1200); }
+    if (!r.json.ok) return toast(r.json.error || "Refusé", true);
     toast("Écran mis à jour ✓");
   }
 
@@ -96,70 +88,76 @@
   function nurseCard(n) {
     const st = STATUS[n.status];
     const btns = Object.keys(STATUS).map(k => `
-      <button class="btn ${n.status === k ? "on" : ""}" style="--c:${STATUS[k].color}" data-act="status" data-id="${n.id}" data-v="${k}">${icon(k)}${STATUS[k].short}</button>`).join("");
-    const chips = quick().map(([l, t]) => `<button class="chip ${n.back === t ? "on" : ""}" data-act="back" data-id="${n.id}" data-v="${t}">${l}</button>`).join("");
+      <button class="btn ${n.status === k ? "on" : ""}" style="--c:${STATUS[k].color}" data-act="status" data-v="${k}">${icon(k)}${STATUS[k].short}</button>`).join("");
+    const chips = quick().map(([l, t]) => `<button class="chip ${n.back === t ? "on" : ""}" data-act="back" data-v="${t}">${l}</button>`).join("");
     return `
     <div class="card" id="n-${n.id}">
       <h2>${n.name}</h2>
       <div class="now" style="--c:${st.color}">${icon(n.status)}${st.label}${n.status === "pause" && n.back ? " · " + backText(n.back).toLowerCase() : ""}</div>
       <div class="btns">${btns}</div>
-      ${n.status === "consult" ? `<button class="next" data-act="next" data-id="${n.id}">Élève suivant (nouvelle consultation)</button>` : ""}
+      ${n.status === "consult" ? `<button class="next" data-act="next">Élève suivant (nouvelle consultation)</button>` : ""}
       <div class="back ${n.status === "pause" ? "show" : ""}">
         <p>Retour prévu (facultatif)</p>
         <div class="chips">${chips}
-          <input type="time" value="${n.back || ""}" data-act="backtime" data-id="${n.id}" aria-label="Heure précise">
-          ${n.back ? `<button class="chip" data-act="back" data-id="${n.id}" data-v="">Effacer</button>` : ""}
+          <input type="time" value="${n.back || ""}" data-act="backtime" aria-label="Heure précise">
+          ${n.back ? `<button class="chip" data-act="back" data-v="">Effacer</button>` : ""}
         </div>
       </div>
-      <details class="hours" ${editing === n.id ? "open" : ""}>
-        <summary data-act="hoursopen" data-id="${n.id}">Horaires d'aujourd'hui : ${fmtHour(n.start)} — ${fmtHour(n.end)}${n.customHours ? " (modifiés)" : ""}</summary>
+      <details class="hours" ${editing ? "open" : ""}>
+        <summary data-act="hoursopen">Horaires d'aujourd'hui : ${fmtHour(n.start)} — ${fmtHour(n.end)}${n.customHours ? " (modifiés)" : ""}</summary>
         <div class="row">
-          <input type="time" id="s-${n.id}" value="${n.start}"> —
-          <input type="time" id="e-${n.id}" value="${n.end}">
-          <button class="save" data-act="hours" data-id="${n.id}">Enregistrer</button>
+          <input type="time" id="h-start" value="${n.start}"> —
+          <input type="time" id="h-end" value="${n.end}">
+          <button class="save" data-act="hours">Enregistrer</button>
         </div>
-        ${n.customHours ? `<button class="link" data-act="resethours" data-id="${n.id}">Rétablir les horaires habituels</button>` : ""}
+        ${n.customHours ? `<button class="link" data-act="resethours">Rétablir les horaires habituels</button>` : ""}
       </details>
     </div>`;
   }
 
   function render() {
-    if (!data) return;
+    if (!data || !who) return;
     const head = document.getElementById("head");
     head.textContent = ""; head.append(data.school || "", document.createElement("br"), data.title || "");
     document.title = (data.title || "Cabinet") + " - Ma présence";
-    if (me && !data.nurses.some(n => n.id === me)) me = null;
-    const sl = document.getElementById("statlink");   // « Mes statistiques » : ses propres chiffres
-    sl.href = me ? "/stats?nurse=" + encodeURIComponent(me) : "/stats";
-    sl.textContent = me ? "Mes statistiques" : "Statistiques";
-    if (!me && !showAll) {
-      app.innerHTML = `<div class="card"><h2>Qui êtes-vous ?</h2><p style="color:var(--muted);margin:6px 0 14px">À ne faire qu'une fois sur cet appareil.</p>
-        <div class="who">${data.nurses.map(n => `<button class="btn" data-act="me" data-id="${n.id}">${n.name}</button>`).join("")}</div></div>`;
-      return;
-    }
-    const list = showAll || !me ? data.nurses : data.nurses.filter(n => n.id === me);
-    app.innerHTML = list.map(nurseCard).join("") +
-      `<div style="text-align:center">${me ? `<button class="link" data-act="toggleall">${showAll ? "Masquer les autres cabinets" : "Voir les autres cabinets"}</button> · <button class="link" data-act="forget">Ce n'est pas moi</button>` : ""}</div>`;
+    const mine = data.nurses.find(n => n.id === me);
+    app.innerHTML = mine ? nurseCard(mine) : '<div class="card">Votre compte n\'est associé à aucun cabinet.</div>';
+  }
+
+  function footer() {
+    document.getElementById("foot").innerHTML =
+      `<div>Connectée : <b>${who.name}</b> · <button class="link" data-act="logout">Se déconnecter</button></div>
+       <div><a class="link" href="/" target="_blank">Voir l'écran d'affichage</a> · <a class="link" href="/stats">Mes statistiques</a></div>`;
   }
 
   document.addEventListener("input", e => {
-    if (e.target.dataset.act === "backtime" && e.target.value) send({ id: e.target.dataset.id, back: e.target.value });
+    if (e.target.dataset.act === "backtime" && e.target.value) send({ back: e.target.value });
   });
   document.addEventListener("click", e => {
     const el = e.target.closest("[data-act]"); if (!el) return;
-    const { act, id, v } = el.dataset;
-    if (act === "status") send({ id, status: v });
-    else if (act === "next") send({ id, status: "consult", next: true });
-    else if (act === "back") send({ id, back: v });
-    else if (act === "hours") { editing = id; send({ id, start: document.getElementById("s-" + id).value, end: document.getElementById("e-" + id).value }); }
-    else if (act === "resethours") send({ id, resetHours: true });
-    else if (act === "hoursopen") editing = editing === id ? false : id;
-    else if (act === "me") { me = id; store.set("me", id); render(); }
-    else if (act === "forget") { me = null; showAll = false; store.set("me", null); render(); }
-    else if (act === "toggleall") { showAll = !showAll; render(); }
+    const { act, v } = el.dataset;
+    if (act === "status") send({ status: v });
+    else if (act === "next") send({ status: "consult", next: true });
+    else if (act === "back") send({ back: v });
+    else if (act === "hours") { editing = true; send({ start: document.getElementById("h-start").value, end: document.getElementById("h-end").value }); }
+    else if (act === "resethours") send({ resetHours: true });
+    else if (act === "hoursopen") editing = !editing;
+    else if (act === "logout") Auth.logout();
   });
 
-  watchState(d => { if (!document.activeElement || document.activeElement.type !== "time") { data = d; render(); } else data = d; });
+  (async function init() {
+    who = await Auth.me();
+    if (!who) who = await Auth.login(app, { tab: "nurse", nurse: params.get("me") || "" });
+    if (who.role !== "nurse") {      // compte administration : pas de panneau à piloter
+      app.innerHTML = `<div class="card"><h2>Compte administration</h2><p style="margin:8px 0 14px;color:var(--muted)">Ce compte consulte les statistiques ; il ne pilote aucun panneau.</p>
+        <a class="save" style="display:inline-block;text-decoration:none" href="/stats">Voir les statistiques</a></div>`;
+      document.getElementById("foot").innerHTML = `<div>Connecté : <b>${who.name}</b> · <button class="link" data-act="logout">Se déconnecter</button></div>`;
+      return;
+    }
+    me = who.id;
+    footer();
+    watchState(d => { if (!document.activeElement || document.activeElement.type !== "time") { data = d; render(); } else data = d; });
+  })();
 </script>
 </body>
 </html>

@@ -49,10 +49,10 @@
   <header>
     <img id="logo" src="/logo" alt="">
     <div><h1>Statistiques d'activité</h1><div class="sub" id="school"></div></div>
-    <a class="noprint" href="/admin">← Retour</a>
+    <span class="noprint" id="user" style="margin-left:auto;font-size:14px;color:var(--muted)"></span>
   </header>
 
-  <div class="card noprint">
+  <div class="card noprint" id="ctl" hidden>
     <div class="bar" id="who" style="margin-bottom:12px"></div>
     <div class="bar" id="presets"></div>
     <div class="bar" style="margin-top:10px">
@@ -69,7 +69,7 @@
   <div id="period" class="hint" style="margin:0 4px 12px"></div>
   <div id="out"></div>
 
-  <p class="note">
+  <p class="note" id="note" hidden>
     <b>Comment lire ces chiffres.</b>
     « Élèves reçus » = nombre de consultations ouvertes (bouton « Consultation », ou « Élève suivant » pour enchaîner).
     « Utilisé (fois) » = nombre de pressions sur le bouton ; les changements automatiques (fin de journée, nouveau jour) ne comptent pas. Le temps « absente » (nuits, week-ends) n'est pas présenté.
@@ -110,14 +110,8 @@
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
   async function api(path, asText) {
-    const go = () => fetch(path, { headers: { "X-Pin": store.get("pin") || "" } });
-    let r = await go();
-    if (r.status === 403) {
-      const pin = prompt("Code d'accès de l'infirmerie :");
-      if (pin === null) throw new Error("annulé");
-      store.set("pin", pin); r = await go();
-      if (r.status === 403) { store.set("pin", null); throw new Error("Code incorrect"); }
-    }
+    const r = await fetch(path, { cache: "no-store" });
+    if (r.status === 401) { location.reload(); throw new Error("Session expirée"); }   // retour à l'écran de connexion
     if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || "Erreur " + r.status);
     return asText ? r : r.json();
   }
@@ -242,13 +236,27 @@
     if (q.get("from") && q.get("to")) { $("from").value = q.get("from"); $("to").value = q.get("to"); load(); }
     else setRange(PRESETS[1][1](), 1);
   };
-  fetch("/api/state").then(r => r.json()).then(d => {
-    $("school").textContent = `${d.school || ""} · ${d.title || ""}`;
-    ORDER = d.nurses.map(n => n.id);
-    d.nurses.forEach(n => { NAMES[n.id] = n.name; });
-    if (who && !NAMES[who]) who = "";
-    drawWho();
-  }).catch(() => {}).then(start);
+  (async function init() {
+    let me = await Auth.me();
+    if (!me) {                                   // connexion : code de l'administration (ou de l'infirmière)
+      me = await Auth.login($("out"), { tab: "admin" });
+      $("out").innerHTML = "";
+    }
+    $("user").innerHTML = `${esc(me.name)} · <a href="#" id="logout">Se déconnecter</a>` +
+      (me.role === "nurse" ? ' · <a href="/admin">Mon panneau</a>' : "");
+    $("logout").onclick = e => { e.preventDefault(); Auth.logout(); };
+    $("ctl").hidden = false; $("note").hidden = false;
+    const d = await fetch("/api/state").then(r => r.json()).catch(() => null);
+    if (d) {
+      $("school").textContent = `${d.school || ""} · ${d.title || ""}`;
+      ORDER = d.nurses.map(n => n.id);
+      d.nurses.forEach(n => { NAMES[n.id] = n.name; });
+    }
+    if (me.role === "nurse") { who = me.id; $("who").hidden = true; }       // une infirmière : ses chiffres seulement
+    else if (who && !NAMES[who]) who = "";
+    if (me.role !== "nurse") drawWho();
+    start();
+  })();
 </script>
 </body>
 </html>

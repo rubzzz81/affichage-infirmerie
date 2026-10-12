@@ -5,7 +5,7 @@ Le même code sert à tous les lycées : **seuls trois éléments sont propres �
 
 | Élément | Où | Contenu |
 |---|---|---|
-| `config.json` | dossier de l'application | Nom de l'établissement, titre, infirmières, horaires, code d'accès |
+| `config.json` | dossier de l'application | Nom de l'établissement, titre, infirmières, comptes administration, horaires, codes hachés |
 | `branding/logo.*` | dossier `branding/` | Le logo de l'établissement |
 | `data.db`, `state.json` | dossier de l'application | Données d'activité (créées automatiquement) |
 
@@ -39,7 +39,8 @@ Un Raspberry Pi = un établissement (ou un groupe de cabinets qui partagent le m
    sudo reboot
    ```
 6. **Vérifier** : l'écran affiche le logo, le titre et une carte par infirmière (étape 7 du guide).
-7. **Former les infirmières** : leur donner leur lien personnel `http://<IP>:8080/admin?me=<id>` (étape 9).
+7. **Sécuriser les accès** : `sh deploy/setup-https.sh`, puis `python3 deploy/pins.py generate` (codes des infirmières et de l'administration), redémarrage, et installation de `certs/ca.crt` sur les appareils ([SECURITE.md](SECURITE.md)).
+8. **Former les infirmières** : leur donner l'adresse `https://<nom-du-pi>.local:8443/admin` (ou leur lien personnel `…/admin?me=<id>`), **leur code personnel en main propre** (étape 9).
 
 ## Ce qui se règle dans `config.json`
 
@@ -49,7 +50,8 @@ Un Raspberry Pi = un établissement (ou un groupe de cabinets qui partagent le m
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
-  "pin": "4821",
+  "sessionHours": { "nurse": 12, "admin": 2 },
+  "admins": [ { "id": "administration", "name": "Administration" } ],
   "minEventSeconds": 10,
   "nurses": [
     { "id": "dupont", "name": "Mme Dupont",
@@ -65,7 +67,8 @@ Un Raspberry Pi = un établissement (ou un groupe de cabinets qui partagent le m
 | `school` | Nom de votre établissement | En-têtes des pages infirmières et statistiques |
 | `title` | Par exemple « Infirmerie », « Cabinet médical » | Titre au centre de l'écran |
 | `logo` | Chemin du fichier logo (PNG, JPG ou SVG) | Affiché en haut à gauche de l'écran et des pages |
-| `pin` | Un code de votre choix | Protège les changements d'état et les statistiques |
+| `admins` | Un ou plusieurs comptes administration (direction, vie scolaire) | Accès en lecture seule aux statistiques de toutes les infirmières |
+| `sessionHours` | Durées de connexion (heures) | Infirmières 12 h, administration 2 h par défaut |
 | `nurses` | Une entrée par personne | Une colonne par entrée sur l'écran |
 | `nurses[].id` | Court, sans espace ni accent, **unique** | Identifie la personne (liens `?me=`, statistiques) |
 | `nurses[].name` | Le nom affiché (« Mme Dupont », « M. Martin »…) | Titre de la carte |
@@ -114,7 +117,9 @@ Si une mise à jour ajoute un champ de configuration, il est décrit ici et dans
 - [ ] Carte SD préparée, Pi sur le réseau, SSH fonctionnel
 - [ ] `config.json` : `school`, `title`, `nurses`, `hours`
 - [ ] Logo dans `branding/` et chemin `logo` correct
-- [ ] `pin` défini
+- [ ] `admins` renseigné, codes générés (`python3 deploy/pins.py generate`) et remis en main propre
+- [ ] HTTPS activé (`sh deploy/setup-https.sh`) et `certs/ca.crt` installé sur les appareils
+- [ ] Ports SSH (22) et VNC (5900) limités aux postes de l'informatique
 - [ ] `sh deploy/install.sh` puis redémarrage
 - [ ] Écran vérifié, un changement d'état testé depuis un téléphone
 - [ ] Veille de l'écran désactivée, IP réservée (DHCP)

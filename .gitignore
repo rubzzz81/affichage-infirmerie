@@ -3,6 +3,8 @@ state.json
 state.json.tmp
 data.db
 data.db-journal
+auth.log*
+certs/
 __pycache__/
 branding/*
 !branding/README.md

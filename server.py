@@ -6,14 +6,17 @@ Serveur sans dépendance (bibliothèque standard uniquement).
   /admin       page de commande des infirmières (téléphone / PC)
   /stats       statistiques d'activité (consultations, occupation...)
   /logo        logo de l'établissement (défini dans config.json)
-  /api/state   état courant (JSON)
-  /api/events  flux temps réel (Server-Sent Events)
-  /api/set     modification d'un état (POST JSON)
-  /api/stats, /api/stats.csv, /api/events.csv   monitoring (JSON / CSV)
+  /api/state   état courant (JSON, public : c'est ce que l'écran affiche)
+  /api/events  flux temps réel (Server-Sent Events, public)
+  /api/accounts, /api/login, /api/logout, /api/me   connexion (codes personnels)
+  /api/set     modification d'un état : l'infirmière connectée, pour elle seule
+  /api/stats, /api/stats.csv, /api/events.csv   statistiques : connexion obligatoire
+                (administration : toutes ; infirmière : les siennes)
+Avec "tls" dans config.json, les pages protégées et les API de connexion ne sont
+servies qu'en HTTPS : les codes ne circulent jamais en clair.
 """
 import csv
 import datetime
-import hmac
 import io
 import json
 import mimetypes
@@ -21,10 +24,13 @@ import os
 import queue
 import re
 import sqlite3
+import ssl
 import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+from auth import Auth
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(BASE, "static")
@@ -36,10 +42,31 @@ DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
 MAX_RANGE_DAYS = 800
 
-with open(os.path.join(BASE, "config.json"), encoding="utf-8") as f:
+CONFIG_PATH = os.path.join(BASE, "config.json")
+with open(CONFIG_PATH, encoding="utf-8") as f:
     CONFIG = json.load(f)
 NURSES = {n["id"]: n for n in CONFIG["nurses"]}
 MIN_EVENT_SECONDS = int(CONFIG.get("minEventSeconds", 10))
+AUTH_LOG = os.path.join(BASE, "auth.log")
+
+
+def auth_log(msg):
+    """Journal des connexions : écran du service + fichier auth.log (conservé, 1 Mo puis rotation)."""
+    line = f"{datetime.datetime.now():%Y-%m-%d %H:%M:%S} {msg}"
+    print(line, flush=True)
+    try:
+        if os.path.exists(AUTH_LOG) and os.path.getsize(AUTH_LOG) > 1_000_000:
+            os.replace(AUTH_LOG, AUTH_LOG + ".1")
+        fd = os.open(AUTH_LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)   # lisible par ce compte seulement
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
+
+
+AUTH = Auth(CONFIG_PATH, log=auth_log)
+TLS = CONFIG.get("tls") or {}          # {"port": 8443, "cert": "certs/server.crt", "key": "certs/server.key"}
+COOKIE = "cabinet_session"
 
 lock = threading.Lock()
 subscribers = set()
@@ -107,7 +134,6 @@ def snapshot():
     return {"school": CONFIG.get("school", ""),
             "title": CONFIG.get("title", "Cabinet d'infirmières"),
             "logo": "/logo?v=%d" % int(os.path.getmtime(logo_path())),
-            "pinRequired": bool(CONFIG.get("pin")),
             "nurses": out}
 
 
@@ -117,16 +143,9 @@ def broadcast():
         q.put(data)
 
 
-def check_pin(supplied):
-    pin = str(CONFIG.get("pin") or "")
-    return not pin or hmac.compare_digest(pin, str(supplied or ""))
-
-
-def apply_change(body):
-    """Retourne (code HTTP, message)."""
-    if not check_pin(body.get("pin")):
-        return 403, "Code incorrect"
-    nid = body.get("id")
+def apply_change(body, nid):
+    """Applique une modification pour l'infirmière nid (déjà authentifiée et autorisée
+    par le gestionnaire HTTP). Retourne (code HTTP, message)."""
     if nid not in NURSES:
         return 400, "Infirmière inconnue"
     with lock:
@@ -194,6 +213,7 @@ def auto_close():
 def watcher():
     stop = threading.Event()
     while not stop.wait(15):
+        AUTH.purge()                  # sessions expirées, blocages anciens
         with lock:
             heartbeat()
             if roll_day() | auto_close():
@@ -371,26 +391,45 @@ def events_csv(d_from, d_to, nurse=None):
 
 # ------------------------------------------------------------------------- HTTP
 
+TLS_ACTIVE = False            # vrai si le serveur HTTPS a pu démarrer (certificat présent)
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer",
+    "X-Frame-Options": "DENY",
+    "Content-Security-Policy": "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+                               "script-src 'self' 'unsafe-inline'; frame-ancestors 'none'; form-action 'self'",
+}
+MAX_BODY = 4096
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
-    server_version = "Cabinet/2.0"
+    server_version = "Cabinet/3.0"
+    timeout = 60                      # coupe les connexions inactives (clients lents ou malveillants)
 
     def log_message(self, *args):
         pass
 
-    def send_bytes(self, code, body, ctype, extra=None):
+    # ------------------------------------------------------------- utilitaires
+    @property
+    def is_tls(self):
+        return bool(getattr(self.server, "is_tls", False))
+
+    def send_bytes(self, code, body, ctype, extra=None, cache="no-cache"):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Cache-Control", cache)
+        for k, v in SECURITY_HEADERS.items():
+            self.send_header(k, v)
         for k, v in (extra or {}).items():
             self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
 
-    def send_json(self, code, obj):
+    def send_json(self, code, obj, extra=None):
         self.send_bytes(code, json.dumps(obj, ensure_ascii=False).encode(),
-                        "application/json; charset=utf-8")
+                        "application/json; charset=utf-8", extra, cache="no-store")
 
     def send_path(self, path):
         ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
@@ -405,9 +444,66 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(404, {"error": "introuvable"})
         self.send_path(path)
 
+    def require_tls(self, page=False):
+        """Vrai si la requête peut continuer. HTTPS actif mais requête en clair :
+        redirection (pages) ou refus (API), pour que les codes ne circulent jamais en clair."""
+        if not TLS_ACTIVE or self.is_tls:
+            return True
+        if page:
+            host = (self.headers.get("Host") or "localhost").split(":")[0]
+            port = int(TLS.get("port", 8443))
+            target = f"https://{host}{'' if port == 443 else ':%d' % port}{self.path}"
+            self.send_bytes(302, b"", "text/plain", {"Location": target})
+        else:
+            self.send_json(403, {"error": "Connexion HTTPS requise."})
+        return False
+
+    def token(self):
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == COOKIE:
+                return v
+        return None
+
+    def session(self):
+        return AUTH.session(self.token())
+
+    def cookie(self, value, max_age):
+        attrs = f"{COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
+        return attrs + ("; Secure" if self.is_tls else "")
+
+    def same_origin(self):
+        """Protection CSRF : une requête POST de navigateur porte un en-tête Origin."""
+        origin = self.headers.get("Origin")
+        return not origin or urllib.parse.urlparse(origin).netloc == self.headers.get("Host", "")
+
+    def read_body(self):
+        """Lit TOUJOURS le corps de la requête, même si elle est ensuite refusée : des octets non
+        lus sur une connexion persistante seraient pris pour le début de la requête suivante.
+        Retourne les octets, ou None si le corps est invalide ou trop gros (connexion fermée)."""
+        try:
+            length = int(self.headers.get("Content-Length", 0) or 0)
+        except ValueError:
+            length = -1
+        if length < 0 or length > MAX_BODY:
+            self.close_connection = True
+            return None
+        return self.rfile.read(length) if length else b""
+
+    def parse_json(self, raw):
+        if raw is None or not (self.headers.get("Content-Type") or "").startswith("application/json"):
+            return None
+        try:
+            data = json.loads(raw or b"{}")
+        except ValueError:
+            return None
+        return data if isinstance(data, dict) else None
+
+    # ------------------------------------------------------------- statistiques
     def stats_request(self, parsed, kind):
-        if not check_pin(self.headers.get("X-Pin")):
-            return self.send_json(403, {"error": "Code incorrect"})
+        sess = self.session()
+        if not sess:
+            return self.send_json(401, {"error": "Connexion requise."})
         query = urllib.parse.parse_qs(parsed.query)
         period = parse_period(query)
         if not period:
@@ -415,6 +511,10 @@ class Handler(BaseHTTPRequestHandler):
         nurse = query.get("nurse", [""])[0] or None        # filtre : une seule infirmière
         if nurse is not None and nurse not in NURSES:
             return self.send_json(400, {"error": "Infirmière inconnue"})
+        if sess["role"] == "nurse":                         # une infirmière ne voit que ses statistiques
+            if nurse not in (None, sess["id"]):
+                return self.send_json(403, {"error": "Vous ne pouvez consulter que vos propres statistiques."})
+            nurse = sess["id"]
         with lock:
             if kind == "json":
                 return self.send_json(200, compute_stats(*period, nurse))
@@ -423,45 +523,84 @@ class Handler(BaseHTTPRequestHandler):
         name = (f"{'statistiques' if kind == 'summary' else 'evenements'}"
                 f"{'_' + nurse if nurse else ''}_{period[0]}_{period[1]}.csv")
         self.send_bytes(200, ("﻿" + body).encode("utf-8"), "text/csv; charset=utf-8",
-                        {"Content-Disposition": f'attachment; filename="{name}"'})
+                        {"Content-Disposition": f'attachment; filename="{name}"'}, cache="no-store")
 
+    # ------------------------------------------------------------- GET
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         if path == "/":
             self.send_static("index.html")
-        elif path == "/admin":
-            self.send_static("admin.html")
-        elif path == "/stats":
-            self.send_static("stats.html")
+        elif path in ("/admin", "/stats"):
+            if self.require_tls(page=True):
+                self.send_static(path[1:] + ".html")
         elif path == "/logo":
             self.send_path(logo_path())
+        elif path == "/ca.crt":        # autorité de certification locale, à installer sur les appareils
+            ca = os.path.join(BASE, "certs", "ca.crt")
+            self.send_path(ca) if os.path.isfile(ca) else self.send_json(404, {"error": "introuvable"})
         elif path == "/api/state":
             with lock:
                 roll_day()
                 self.send_json(200, snapshot())
         elif path == "/api/events":
             self.stream_events()
-        elif path == "/api/stats":
-            self.stats_request(parsed, "json")
-        elif path == "/api/stats.csv":
-            self.stats_request(parsed, "summary")
-        elif path == "/api/events.csv":
-            self.stats_request(parsed, "events")
+        elif path == "/api/accounts":
+            self.send_json(200, AUTH.public_accounts())
+        elif path == "/api/me":
+            if not self.require_tls():
+                return
+            sess = self.session()
+            if not sess:
+                return self.send_json(401, {"ok": False})
+            self.send_json(200, {"ok": True, "role": sess["role"], "id": sess["id"], "name": sess["name"],
+                                 "insecure": not self.is_tls})
+        elif path in ("/api/stats", "/api/stats.csv", "/api/events.csv"):
+            if self.require_tls():
+                self.stats_request(parsed, {"/api/stats": "json", "/api/stats.csv": "summary",
+                                            "/api/events.csv": "events"}[path])
         elif path.startswith("/static/"):
             self.send_static(path[len("/static/"):])
         else:
             self.send_json(404, {"error": "introuvable"})
 
+    # ------------------------------------------------------------- POST
     def do_POST(self):
-        if self.path != "/api/set":
+        path = self.path.split("?", 1)[0]
+        raw = self.read_body()                       # avant tout refus (voir read_body)
+        if path not in ("/api/login", "/api/logout", "/api/set"):
             return self.send_json(404, {"error": "introuvable"})
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(min(length, 4096)) or b"{}")
-        except ValueError:
-            return self.send_json(400, {"error": "JSON invalide"})
-        code, msg = apply_change(body)
+        if not self.require_tls():
+            return
+        if not self.same_origin():
+            return self.send_json(403, {"error": "Origine refusée."})
+        if path == "/api/logout":
+            AUTH.logout(self.token())
+            return self.send_json(200, {"ok": True}, {"Set-Cookie": self.cookie("", 0)})
+        body = self.parse_json(raw)
+        if body is None:
+            return self.send_json(400, {"error": "Requête invalide."})
+
+        if path == "/api/login":
+            role, ident = body.get("role"), body.get("id")
+            if role not in ("nurse", "admin") or not isinstance(ident, str):
+                return self.send_json(400, {"error": "Requête invalide."})
+            ok, data = AUTH.login(role, ident, body.get("pin"), self.client_address[0])
+            if not ok:
+                return self.send_json(429 if data.get("retry") else 401, {"ok": False, **data})
+            self.send_json(200, {"ok": True, "role": data["role"], "id": data["id"], "name": data["name"]},
+                           {"Set-Cookie": self.cookie(data["token"], data["ttl"])})
+            return
+
+        # /api/set : l'infirmière connectée modifie SON panneau, rien d'autre
+        sess = self.session()
+        if not sess:
+            return self.send_json(401, {"ok": False, "error": "Connexion requise."})
+        if sess["role"] != "nurse":
+            return self.send_json(403, {"ok": False, "error": "Ce compte est en lecture seule."})
+        if body.get("id") not in (None, sess["id"]):
+            return self.send_json(403, {"ok": False, "error": "Vous ne pouvez modifier que votre propre panneau."})
+        code, msg = apply_change(body, sess["id"])
         self.send_json(code, {"ok": code == 200, "error": None if code == 200 else msg})
 
     def stream_events(self):
@@ -469,6 +608,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
         self.send_header("Cache-Control", "no-cache")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Connection", "keep-alive")
         self.end_headers()
         with lock:
@@ -491,6 +631,34 @@ class Handler(BaseHTTPRequestHandler):
 class Server(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 64
+    is_tls = False
+
+    def handle_error(self, request, client_address):
+        pass          # déconnexions brusques, certificat refusé par un client... : sans importance
+
+
+def start_tls():
+    """Démarre le serveur HTTPS si config.json le demande et si le certificat existe."""
+    global TLS_ACTIVE
+    if not TLS:
+        return
+    cert, key = (os.path.join(BASE, TLS.get("cert", "certs/server.crt")),
+                 os.path.join(BASE, TLS.get("key", "certs/server.key")))
+    if not (os.path.isfile(cert) and os.path.isfile(key)):
+        print("[sécurité] certificat HTTPS introuvable : HTTPS désactivé (voir deploy/setup-https.sh)", flush=True)
+        return
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
+    ctx.load_cert_chain(cert, key)
+    port = int(TLS.get("port", 8443))
+    srv = Server(("0.0.0.0", port), Handler)
+    srv.is_tls = True
+    # la poignée de main TLS se fait dans le fil de la requête : un client lent ne bloque pas l'accueil
+    srv.socket = ctx.wrap_socket(srv.socket, server_side=True, do_handshake_on_connect=False)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    TLS_ACTIVE = True
+    print(f"HTTPS en écoute sur le port {port}", flush=True)
 
 
 if __name__ == "__main__":
@@ -498,6 +666,12 @@ if __name__ == "__main__":
     load_state()
     startup_reconcile()
     roll_day()
+    for w in AUTH.warnings():
+        print("[sécurité]", w, flush=True)
+    start_tls()
+    if not TLS_ACTIVE:
+        print("[sécurité] HTTPS inactif : les codes de connexion circuleraient en clair sur le réseau "
+              "(voir deploy/setup-https.sh)", flush=True)
     threading.Thread(target=watcher, daemon=True).start()
     port = int(os.environ.get("PORT", CONFIG.get("port", 8080)))
     print(f"Cabinet en écoute sur le port {port}", flush=True)

@@ -46,7 +46,9 @@ Téléphone / PC infirmière ──► /admin ──POST /api/set──┐
 | Fichier | Rôle |
 |---|---|
 | `server.py` | Serveur HTTP + temps réel (SSE), validation, journal d'activité, statistiques |
-| `config.json` | Établissement, infirmières, horaires, code d'accès, port (à créer ; non versionné) |
+| `config.json` | Établissement, infirmières, administration, horaires, codes hachés (à créer ; non versionné, droits 600) |
+| `auth.py` | Comptes, codes hachés, sessions, limitation des essais |
+| `deploy/pins.py`, `deploy/setup-https.sh`, `deploy/use-standard-ports.sh` | Codes d'accès ; HTTPS ; ports 80/443 |
 | `config.example.json` | Modèle de configuration |
 | `branding/` | Logo de l'établissement (non versionné) |
 | `static/index.html` | Page d'affichage de l'écran (s'adapte à toute taille d'écran et à 1 à 4 infirmières) |
@@ -91,18 +93,37 @@ Aucun `sudo` n'est nécessaire pour l'application.
 
 ## Utilisation par les infirmières
 
-Ouvrir `http://<IP_DU_PI>:8080/admin` sur le téléphone ou le PC (même réseau que le Pi).
+Ouvrir `https://pi-infirmerie.local:8443/admin` sur le téléphone ou le PC (même réseau que le Pi) : le nom `.local` remplace l'adresse IP.
 
-1. À la première visite : toucher son nom (retenu ensuite sur l'appareil).
+1. Toucher **son nom** puis saisir **son code personnel** ; l'infirmière ne voit que **son** panneau.
 2. Toucher un des 4 boutons pour changer d'état. L'écran se met à jour en moins d'une seconde.
 3. Pour une absence temporaire : choisir facultativement un retour dans 15 min, 30 min, 1 h, ou une heure précise.
 4. Pour modifier les horaires du jour : déplier « Horaires d'aujourd'hui », puis *Enregistrer*.
    « Rétablir les horaires habituels » annule la modification.
+5. **Se déconnecter** en bas de page sur un appareil partagé.
 
-Liens personnels : `http://<IP_DU_PI>:8080/admin?me=<id>` sélectionne directement l'infirmière (`id` du fichier de configuration), pratique pour un QR code ou un favori.
+Liens personnels : `https://pi-infirmerie.local:8443/admin?me=<id>` présélectionne le nom (le code reste obligatoire), pratique pour un QR code ou un favori.
 
-Astuce : ajouter la page à l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil »).
-On peut aussi afficher un QR code vers cette adresse près de l'écran.
+Astuce : ajouter la page à l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil »). Avec `sh deploy/use-standard-ports.sh` (demande `sudo`), l'adresse devient simplement `https://pi-infirmerie.local`.
+
+## Sécurité
+
+Le Pi est joignable par tout le réseau du lycée, élèves compris. Les accès sont donc protégés :
+
+| Qui | Accès |
+|---|---|
+| Tout le monde | L'écran d'affichage (présence uniquement, comme l'écran du couloir) |
+| **Infirmière** | **Son** panneau et **ses** statistiques, avec **son code personnel** |
+| **Administration** | Les statistiques de **toutes** les infirmières, en **lecture seule**, avec son code |
+
+Codes **hachés** (scrypt), **HTTPS** obligatoire pour les pages protégées, **blocage** après des essais ratés, sessions limitées, **journal** des connexions, protection contre les requêtes forgées (CSRF). **Rien n'est ouvert tant qu'un compte n'a pas de code.**
+
+```bash
+sh deploy/setup-https.sh                  # chiffrement (autorité locale + certificat)
+python3 deploy/pins.py generate           # un code pour chaque compte (affichés une fois)
+systemctl --user restart cabinet.service
+```
+Détail, installation du certificat sur les appareils, pare-feu, codes oubliés : **[docs/SECURITE.md](docs/SECURITE.md)**.
 
 ## Configuration (`config.json`)
 
@@ -112,8 +133,11 @@ On peut aussi afficher un QR code vers cette adresse près de l'écran.
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
-  "pin": "",
   "minEventSeconds": 10,
+  "sessionHours": { "nurse": 12, "admin": 2 },
+  "admins": [
+    { "id": "administration", "name": "Administration" }
+  ],
   "nurses": [
     { "id": "dupont", "name": "Mme Dupont",
       "hours": { "default": ["08:00", "18:00"], "wed": ["08:00", "12:00"] } }
@@ -125,8 +149,8 @@ On peut aussi afficher un QR code vers cette adresse près de l'écran.
 - `minEventSeconds` : les changements d'état plus courts (appui par erreur) sont ignorés dans les statistiques.
 - `nurses` : une entrée par infirmière, une colonne par entrée sur l'écran. `id` : identifiant court sans espace, **à ne pas changer en cours d'année** (les statistiques y sont rattachées).
 - `hours.default` : horaires habituels ; une clé `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun` remplace les horaires pour ce jour.
-- `pin` : code d'accès facultatif. S'il est défini, il est demandé une fois par appareil pour modifier un état.
-  **Recommandé** : sans code, toute personne du réseau du lycée qui connaît `/admin` peut changer l'affichage.
+- `admins` : comptes **administration** (statistiques de toutes, lecture seule). `sessionHours` : durée de connexion sans activité (infirmières 12 h, administration 2 h par défaut).
+- **Les codes ne s'écrivent pas dans ce fichier** : ils se définissent avec `python3 deploy/pins.py` (stockés hachés). Un bloc `tls` est ajouté par `deploy/setup-https.sh`.
 - Après modification : `systemctl --user restart cabinet.service`.
 
 ## Exploitation et dépannage
@@ -153,21 +177,23 @@ L'état courant est dans `state.json` (non versionné). Pour tout remettre à z�
 | Route | Description |
 |---|---|
 | `GET /` | Page d'affichage |
-| `GET /admin` | Page de commande |
-| `GET /api/state` | État courant (JSON) |
-| `GET /api/events` | Flux temps réel (Server-Sent Events) |
-| `GET /stats` | Tableau de bord des statistiques |
-| `GET /api/stats?from=AAAA-MM-JJ&to=AAAA-MM-JJ[&nurse=<id>]` | Statistiques de la période (JSON), pour toutes les infirmières ou une seule |
-| `GET /api/stats.csv`, `GET /api/events.csv` (mêmes paramètres) | Exports CSV : résumé par infirmière, détail de chaque changement d'état |
-| `GET /stats?nurse=<id>` | Tableau de bord, ouvert sur une infirmière (lien personnel) |
-| `GET /logo` | Logo de l'établissement |
-| `POST /api/set` | Modifier un état. Corps JSON : `{"id":"dupont","status":"pause","back":"14:30","pin":"…"}` ; ou `{"id","start","end"}` pour les horaires ; ou `{"id","resetHours":true}` |
+| `GET /admin` | Page de commande (HTTPS ; écran de connexion si pas de session) |
+| `GET /api/state` | État courant (JSON), **public** |
+| `GET /api/events` | Flux temps réel (Server-Sent Events), **public** |
+| `GET /logo`, `GET /ca.crt` | Logo de l'établissement ; autorité de certification locale |
+| `GET /api/accounts` | Noms des comptes pour l'écran de connexion (jamais de code) |
+| `POST /api/login` | `{"role":"nurse"\|"admin","id":"…","pin":"…"}` → cookie de session (HTTPS uniquement) |
+| `POST /api/logout`, `GET /api/me` | Fermer la session ; compte connecté |
+| `POST /api/set` | **Infirmière connectée**, pour son panneau : `{"status":"pause","back":"14:30"}` ; ou `{"start","end"}` pour les horaires ; ou `{"resetHours":true}` |
+| `GET /stats` | Tableau de bord (connexion requise) ; `/stats?nurse=<id>` s'ouvre sur une infirmière |
+| `GET /api/stats?from=AAAA-MM-JJ&to=AAAA-MM-JJ[&nurse=<id>]` | Statistiques (JSON) : administration = toutes, infirmière = les siennes |
+| `GET /api/stats.csv`, `GET /api/events.csv` (mêmes paramètres) | Exports CSV, mêmes droits |
 
-`status` : `present`, `consult`, `pause`, `absent`. `back` n'est accepté que pour `pause`. Les heures sont au format `HH:MM`. `"next": true` avec `"status":"consult"` ouvre une nouvelle consultation (élève suivant). Les routes `/api/stats*` et `/api/events.csv` attendent le code d'accès dans l'en-tête `X-Pin` s'il est défini.
+`status` : `present`, `consult`, `pause`, `absent`. `back` n'est accepté que pour `pause`. Les heures sont au format `HH:MM`. `"next": true` avec `"status":"consult"` ouvre une nouvelle consultation (élève suivant). Les routes protégées répondent **401** sans session, **403** si le compte n'a pas le droit (ou si l'accès se fait en HTTP), **429** pendant un blocage. Le serveur n'accepte aucun code dans une requête autre que la connexion.
 
 ## Limites connues
 
-- Pas d'authentification individuelle : un code partagé facultatif (`pin`), non chiffré (HTTP). Adapté à un réseau interne de confiance, pas à Internet.
+- Conçu pour un **réseau interne** : ne pas l'exposer sur Internet. Pas de double authentification (le code est le seul facteur). Les ports SSH et VNC du Pi doivent être limités aux postes de l'informatique ([docs/SECURITE.md](docs/SECURITE.md), section 7).
 - Les statistiques mesurent ce que les infirmières déclarent avec les boutons : une consultation oubliée ouverte ou un appui manquant fausse les chiffres. Elles ne remplacent pas un registre officiel.
 - Les mesures commencent au déploiement de la fonction de statistiques : pas d'historique antérieur.
 - Au-delà de 4 infirmières sur un même écran, les textes deviennent petits.

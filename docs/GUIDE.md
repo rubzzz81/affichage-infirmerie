@@ -248,14 +248,18 @@ Contenu type, à adapter :
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
-  "pin": "",
   "minEventSeconds": 10,
+  "sessionHours": { "nurse": 12, "admin": 2 },
+  "admins": [
+    { "id": "administration", "name": "Administration" }
+  ],
   "nurses": [
     { "id": "broux",  "name": "Mme Broux",  "hours": { "default": ["08:00", "18:00"] } },
     { "id": "glinka", "name": "Mme Glinka", "hours": { "default": ["08:00", "16:00"] } }
   ]
 }
 ```
+Les codes d'accès ne s'écrivent **pas** dans ce fichier : ils se définissent avec `deploy/pins.py` (étape 8.3).
 
 | Champ | Rôle |
 |---|---|
@@ -263,8 +267,10 @@ Contenu type, à adapter :
 | `title` | Titre affiché **au centre de l'écran** du couloir, entre le logo et l'heure |
 | `logo` | Chemin du logo, relatif au dossier de l'application (PNG, JPG ou SVG). Absent : logo par défaut |
 | `minEventSeconds` | Les changements d'état plus courts que cela (appui par erreur) sont ignorés dans les statistiques |
-| `port` | Port HTTP du serveur (8080 par défaut) |
-| `pin` | Code d'accès facultatif pour modifier un état. Vide = pas de code |
+| `port` | Port HTTP du serveur (8080 par défaut) : écran public et redirection vers HTTPS |
+| `tls` | Ajouté automatiquement par `deploy/setup-https.sh` : port HTTPS (8443 par défaut) et fichiers du certificat |
+| `sessionHours` | Durée de connexion sans activité, en heures, pour les infirmières (`nurse`, 12 par défaut) et l'administration (`admin`, 2 par défaut) |
+| `admins[]` | Comptes **administration** (accès aux statistiques de toutes les infirmières, en lecture seule) : `id` et `name` |
 | `nurses[].id` | Identifiant court, sans espace ni accent |
 | `nurses[].name` | Nom affiché sur l'écran |
 | `hours.default` | Horaires habituels `["début", "fin"]` |
@@ -350,20 +356,38 @@ ip link show eth0
 ```
 La ligne `link/ether xx:xx:xx:xx:xx:xx` donne l'adresse MAC.
 
-### 8.3 Protéger la modification par un code (recommandé)
+### 8.3 Sécuriser les accès : codes personnels et HTTPS (obligatoire)
 
-Sans code, toute personne du réseau du lycée qui connaît l'adresse `/admin` peut changer l'affichage.
+Le Pi est joignable par tout le réseau du lycée, **élèves compris**. Sans protection, n'importe qui pourrait modifier l'affichage. Les accès sont donc protégés ainsi :
 
-1. Éditer la configuration :
+- chaque **infirmière** a son **code personnel** : elle pilote **son** panneau et voit **ses** statistiques ;
+- l'**administration** a son propre code : elle voit les statistiques de **toutes**, en lecture seule ;
+- l'écran du couloir reste public (il ne montre que la présence) ;
+- les codes ne circulent qu'en **HTTPS** (chiffré).
+
+**Tant qu'aucun code n'est défini, personne ne peut se connecter** : c'est voulu, rien n'est ouvert par défaut.
+
+**À faire une seule fois**, sur le Pi, en SSH :
+
+1. Activer le chiffrement :
    ```bash
-   nano ~/cabinet/config.json
+   cd ~/cabinet
+   sh deploy/setup-https.sh
    ```
-   et renseigner par exemple `"pin": "4821"` (choisissez le vôtre).
-2. Redémarrer le serveur :
+2. Générer les codes (affichés **une seule fois**, notez-les) :
+   ```bash
+   python3 deploy/pins.py generate
+   ```
+   Pour choisir vous-même un code : `python3 deploy/pins.py set nurse:broux`. Remettez chaque code à son titulaire **en main propre**, puis effacez le terminal (`clear`).
+3. Redémarrer le serveur :
    ```bash
    systemctl --user restart cabinet.service
    ```
-3. Au premier changement d'état sur chaque téléphone, le code est demandé, puis retenu sur l'appareil.
+4. Installer l'**autorité de certification** `certs/ca.crt` sur les appareils (PC de l'administration, téléphones des infirmières), une seule fois par appareil, pour supprimer l'avertissement de sécurité du navigateur (marche à suivre dans [SECURITE.md](SECURITE.md)).
+
+✅ **Vérification** : `https://pi-infirmerie.local:8443/admin` affiche l'écran de connexion, sans avertissement du navigateur.
+
+Tout le détail (blocage après des essais ratés, durée des sessions, journal des connexions, code oublié, pare-feu, renouvellement du certificat) est dans **[SECURITE.md](SECURITE.md)**.
 
 ### 8.4 Accès à distance au bureau du Pi (VNC)
 
@@ -405,25 +429,36 @@ Vous voyez alors l'écran du couloir en direct, avec la souris et le clavier.
 
 ## 9. Utilisation par les infirmières
 
-### 9.1 Ouvrir la page
+### 9.1 Ouvrir la page (sans taper l'adresse IP)
 
-Sur le téléphone (connecté au réseau du lycée) :
+Sur le téléphone (connecté au réseau du lycée), ouvrir :
 
 ```
-http://<IP>:8080/admin
+https://pi-infirmerie.local:8443/admin
 ```
-Il est pratique de donner à chaque infirmière **son lien personnel**, qui sélectionne son nom d'office :
-```
-http://<IP>:8080/admin?me=broux
-http://<IP>:8080/admin?me=glinka
-```
-(`me=` reprend l'`id` du fichier de configuration.) On peut en faire un QR code à coller près de l'écran.
+Le nom `pi-infirmerie.local` remplace l'adresse IP (il suit le Pi même si son IP change). Avec les **ports standards** (`sh deploy/use-standard-ports.sh`, voir [SECURITE.md](SECURITE.md)), l'adresse devient simplement `https://pi-infirmerie.local`.
 
-### 9.2 Premier accès : choisir son nom
+Chaque infirmière enregistre la page en **favori** ou l'ajoute à l'**écran d'accueil** du téléphone, ou scanne un **QR code** collé près de l'écran : un seul geste ensuite. Cette adresse ouvre l'écran de connexion, jamais un panneau.
 
-À la première visite sans lien personnel, toucher son nom. L'appareil s'en souvient.
+> Un lien personnel présélectionne le nom : `https://pi-infirmerie.local:8443/admin?me=broux`. Le code reste obligatoire.
 
-![Page « Qui êtes-vous ? »](img/admin-1-qui-etes-vous.png)
+### 9.2 Se connecter avec son code personnel
+
+1. Toucher **son nom** (il est présélectionné si le lien contient `?me=`).
+2. Saisir **son code personnel** (le champ est masqué) et toucher **Se connecter**.
+
+![Écran de connexion d'une infirmière](img/connexion-infirmiere.png)
+
+Si le code est faux, un message l'indique :
+
+![Code incorrect](img/connexion-erreur.png)
+
+- Après **5 codes faux** de suite, la connexion est bloquée quelques minutes (voir [SECURITE.md](SECURITE.md)).
+- L'infirmière reste connectée **12 heures** sans activité ; au-delà, il suffit de se reconnecter.
+- **Sur un téléphone ou un PC partagé, toujours toucher « Se déconnecter »** (lien en bas de la page).
+- **Code oublié** : le demander à la personne qui administre le Pi, qui en définit un nouveau (`python3 deploy/pins.py set nurse:<id>`).
+
+Une infirmière ne voit **que son propre panneau** : elle ne peut pas modifier celui d'une collègue.
 
 ### 9.3 Changer d'état
 
@@ -466,11 +501,9 @@ Ces horaires ne valent que pour la journée en cours.
 - **Chaque nuit** (changement de date), tout le monde repasse en **Absente** avec les horaires habituels. Il n'y a donc pas de « Présente » oublié le lendemain.
 - **Avant l'heure de début**, rien n'est forcé : une infirmière arrivée plus tôt peut se mettre « Présente » dès son arrivée.
 
-### 9.7 Autres cabinets
+### 9.7 Remplacement d'une collègue
 
-Le lien « Voir les autres cabinets » affiche aussi les autres infirmières (par exemple pour remplacer une collègue). « Ce n'est pas moi » oublie le nom retenu sur l'appareil.
-
-Astuce : sur le téléphone, *Ajouter à l'écran d'accueil* depuis le navigateur crée une icône qui ouvre directement la page.
+Chaque panneau n'est modifiable que par sa propriétaire. Pour qu'une personne en remplace une autre, la propriétaire du compte lui **communique son code pour la durée du remplacement**, puis **demande un nouveau code** (`python3 deploy/pins.py set nurse:<id>`), ce qui ferme les sessions ouvertes. Un code est personnel : ne le laissez pas à disposition.
 
 ### 9.8 Enchaîner les élèves : « Élève suivant »
 
@@ -488,26 +521,41 @@ Ce geste alimente directement le nombre d'élèves reçus et la durée moyenne d
 
 ### 9.9 Consulter les statistiques d'activité
 
-Chaque changement d'état est enregistré dans un journal (base SQLite `data.db` sur le Pi, sans rien à installer). La page de statistiques le restitue :
+Chaque changement d'état est enregistré dans un journal (base SQLite `data.db` sur le Pi, sans rien à installer). La page de statistiques le restitue, **après connexion** :
 
 ```
-http://<IP>:8080/stats
+https://pi-infirmerie.local:8443/stats
 ```
-(ou le lien « Statistiques » en bas de la page des infirmières).
 
-Les données de la capture ci-dessous sont **fictives** (démonstration sur 4 semaines) :
+**Qui voit quoi**
+
+| Compte | Statistiques visibles |
+|---|---|
+| **Administration** | Celles de **toutes** les infirmières, avec le sélecteur « Toutes / une infirmière » (lecture seule) |
+| **Infirmière** | **Uniquement les siennes** (pas de sélecteur) ; en essayant `?nurse=<autre>`, elle ne voit toujours que les siennes |
+| Sans compte | Rien : un écran de connexion |
+
+Les exports CSV suivent les mêmes règles. La page des infirmières propose le lien **« Mes statistiques »** en bas.
+
+**Se connecter** : onglet **Administration** (code du compte administration) ou onglet **Infirmière** (son nom et son code).
+
+![Connexion de l'administration](img/connexion-administration.png)
+
+Les données des captures ci-dessous sont **fictives** (démonstration sur 4 semaines). Vue de l'**administration** :
 
 ![Tableau de bord des statistiques](img/stats-1-tableau-de-bord.png)
 
-**Choisir l'infirmière** : la ligne « Infirmière » en haut permet de voir **toutes les infirmières** côte à côte, ou **une seule** (*Mme Broux*, *Mme Glinka*…). Le choix s'applique aux chiffres, aux graphiques et aux exports CSV.
+**Choisir l'infirmière** (administration) : la ligne « Infirmière » en haut permet de voir **toutes les infirmières** côte à côte, ou **une seule** (*Mme Broux*, *Mme Glinka*…). Le choix s'applique aux chiffres, aux graphiques et aux exports CSV.
 
-**Lien personnel** : chaque infirmière peut ouvrir directement ses propres statistiques avec `http://<IP>:8080/stats?nurse=<id>` (par exemple `…/stats?nurse=broux`). Sur la page des infirmières, le lien en bas devient **« Mes statistiques »** dès qu'elle a choisi son nom.
-
-Vue d'une seule infirmière (données **fictives** de démonstration) :
+Vue de l'administration filtrée sur **une infirmière** :
 
 ![Statistiques d'une seule infirmière](img/stats-2-par-infirmiere.png)
 
-> Ce filtre sert à **présenter** les chiffres d'une personne, pas à les protéger : toute personne qui peut ouvrir `/stats` (et connaît le code d'accès s'il y en a un) peut voir les statistiques de toutes les infirmières.
+Vue d'une **infirmière connectée** (elle ne voit que ses chiffres, sans sélecteur) :
+
+![Statistiques vues par l'infirmière](img/stats-3-vue-infirmiere.png)
+
+> Les droits sont vérifiés **par le serveur** à chaque requête : une infirmière ne peut pas voir les chiffres d'une collègue en modifiant l'adresse. Le compte administration est en **lecture seule** : il ne peut piloter aucun panneau.
 
 **Choisir la période** : *Aujourd'hui*, *7 derniers jours*, *30 derniers jours*, *Ce mois-ci*, *Année scolaire*, ou deux dates au choix puis **Afficher**.
 
@@ -542,7 +590,7 @@ Les fichiers CSV utilisent le point-virgule et la virgule décimale : ils s'ouvr
 - Les mesures commencent au déploiement de cette version : il n'y a pas d'historique avant.
 - Les changements d'état de moins de `minEventSeconds` secondes (10 par défaut), c'est-à-dire un appui par erreur aussitôt corrigé, sont ignorés.
 - Si le Pi est éteint plus de 2 minutes, le journal arrête les mesures à la dernière heure connue (une panne ne gonfle pas les durées).
-- Si un `pin` est défini (étape 8.3), il est demandé pour ouvrir les statistiques.
+- Les statistiques ne s'ouvrent qu'après connexion (étape 8.3) ; l'administration voit tout, chaque infirmière voit les siennes.
 - Les données restent sur le Pi (`data.db`). Pour une sauvegarde, copier ce fichier.
 
 ## 10. Mettre à jour l'application
@@ -578,7 +626,10 @@ Les fichiers `config.json` et `state.json` ne sont jamais écrasés par une mise
 | Écran qui s'éteint | Veille activée | Étape 8.1 |
 | Petite pastille orange en bas à droite de l'écran | Connexion au serveur perdue | Elle disparaît toute seule et la page se recharge au retour du serveur ; sinon, redémarrer le service |
 | Les changements n'apparaissent pas | Page ancienne ou serveur bloqué | Recharger la page ; `curl localhost:8080/api/state` sur le Pi |
-| Le code est redemandé en boucle | Code erroné | Recharger la page et ressaisir le bon code |
+| « Ce compte n'est pas activé » | Aucun code défini pour ce compte | `python3 deploy/pins.py set <compte>` (voir [SECURITE.md](SECURITE.md)) |
+| « Trop de tentatives, réessayez dans X min » | Plusieurs codes faux : blocage temporaire | Attendre ; ou redémarrer le service pour débloquer |
+| Avertissement de sécurité du navigateur sur `https://…` | L'autorité `ca.crt` n'est pas installée sur cet appareil | Installer `certs/ca.crt` (SECURITE.md, section 2) |
+| Redirigé vers `https://…:8443` qui ne répond pas | Le port 8443 est filtré par le réseau | Demander au service informatique d'autoriser le port 8443 (ou passer en 443) |
 | Statistiques vides | Aucune activité sur la période (les mesures commencent à l'installation) | Choisir une autre période ; vérifier que `data.db` existe dans `~/cabinet` |
 | Chiffres étonnants (élèves en trop ou en moins) | Appuis par erreur ou consultation oubliée ouverte | Utiliser « Élève suivant » uniquement pour enchaîner ; le détail CSV montre chaque événement |
 | Message « Serveur injoignable » sur le téléphone | Réseau coupé | Vérifier la connexion du téléphone |
@@ -644,7 +695,13 @@ Téléphone / PC infirmière ──► /admin ──POST /api/set──┐
 | Fichier | Rôle |
 |---|---|
 | `server.py` | Serveur HTTP, temps réel (SSE), validation, sauvegarde de l'état, fermeture automatique |
-| `config.json` | Infirmières, horaires, code d'accès (non versionné) |
+| `config.json` | Infirmières, administration, horaires, codes hachés (non versionné, droits 600) |
+| `auth.py` | Comptes, codes hachés, sessions, limitation des essais |
+| `certs/` | Autorité locale et certificat HTTPS (secrets, non versionnés) |
+| `auth.log` | Journal des connexions (non versionné) |
+| `deploy/pins.py` | Définir / changer les codes des comptes |
+| `deploy/setup-https.sh` | Activer le HTTPS (autorité locale + certificat) |
+| `deploy/use-standard-ports.sh` | Ports 80/443 (demande `sudo`) |
 | `static/index.html` | Page d'affichage de l'écran |
 | `static/admin.html` | Page de commande des infirmières |
 | `static/stats.html` | Tableau de bord des statistiques |
@@ -667,7 +724,9 @@ gh repo create affichage-infirmerie --private --source=. --push
 
 ### D. Sécurité en bref
 
-- L'application est prévue pour le **réseau interne** du lycée, en HTTP : ne pas l'exposer sur Internet.
-- Utiliser le `pin` pour limiter les modifications (étape 8.3).
+- L'application est prévue pour le **réseau interne** du lycée : ne pas l'exposer sur Internet.
+- Chaque infirmière a **son code personnel**, l'administration a le sien ; ils circulent uniquement en **HTTPS** (étape 8.3 et [SECURITE.md](SECURITE.md)).
+- Se déconnecter sur un appareil partagé ; remplacer un code dès qu'il est connu d'un tiers (`python3 deploy/pins.py set <compte>`).
+- Limiter les ports SSH (22) et VNC (5900) du Pi aux postes de l'informatique ([SECURITE.md](SECURITE.md), section 7).
 - Garder les identifiants du Pi hors du dépôt et hors des messages partagés.
 - Utiliser une clé SSH dédiée, révocable, plutôt que de partager le mot de passe du Pi.

@@ -36,3 +36,84 @@ function watchState(onState) {
   setInterval(pull, 30000);
   pull();
 }
+
+// ---------------------------------------------------------------- Connexion (codes personnels)
+// Utilisé par les pages /admin (infirmières) et /stats (administration, ou infirmière pour ses chiffres).
+const Auth = {
+  async me() {
+    try { const r = await fetch("/api/me", { cache: "no-store" }); return r.ok ? await r.json() : null; } catch (e) { return null; }
+  },
+  async post(path, body) {
+    const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+    return { status: r.status, json: await r.json().catch(() => ({})) };
+  },
+  async logout() { await Auth.post("/api/logout"); location.reload(); },
+
+  // Affiche l'écran de connexion dans `box` ; la promesse est résolue avec le compte connecté.
+  async login(box, { tab = "nurse", nurse = "" } = {}) {
+    let acc = { nurses: [], admins: [] };
+    try { acc = await (await fetch("/api/accounts", { cache: "no-store" })).json(); } catch (e) {}
+    const st = { tab: tab === "admin" && !acc.admins.length ? "nurse" : tab,
+                 nurse: acc.nurses.some(n => n.id === nurse) ? nurse : "", admin: (acc.admins[0] || {}).id || "" };
+    const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+    return new Promise(resolve => {
+      const draw = (msg = "") => {
+        const list = st.tab === "nurse" ? acc.nurses : acc.admins, sel = st.tab === "nurse" ? st.nurse : st.admin;
+        box.innerHTML = `
+          <form class="lg" autocomplete="on">
+            <h2>Connexion</h2>
+            ${location.protocol !== "https:" ? '<p class="lg-warn">⚠ Connexion non chiffrée : ne saisissez pas votre code sur cette page. Demandez l\'accès en HTTPS.</p>' : ""}
+            <div class="lg-seg" role="tablist">
+              <button type="button" data-tab="nurse" class="${st.tab === "nurse" ? "on" : ""}">Infirmière</button>
+              <button type="button" data-tab="admin" class="${st.tab === "admin" ? "on" : ""}" ${acc.admins.length ? "" : "disabled"}>Administration</button>
+            </div>
+            ${list.length > 1 || st.tab === "nurse" ? `<p class="lg-lbl">${st.tab === "nurse" ? "Qui êtes-vous ?" : "Compte"}</p>
+              <div class="lg-who">${list.map(a => `<button type="button" data-id="${esc(a.id)}" class="${a.id === sel ? "on" : ""}">${esc(a.name)}</button>`).join("")}</div>`
+              : `<p class="lg-lbl">Compte : <b>${esc((list[0] || {}).name || "—")}</b></p>`}
+            <label class="lg-lbl" for="lg-pin">Code personnel</label>
+            <input id="lg-pin" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false" maxlength="64" required>
+            <p class="lg-err" role="alert">${esc(msg)}</p>
+            <button class="lg-go" type="submit">Se connecter</button>
+          </form>`;
+        const pin = box.querySelector("#lg-pin");
+        if (sel) pin.focus();
+        box.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { st.tab = b.dataset.tab; draw(); });
+        box.querySelectorAll(".lg-who [data-id]").forEach(b => b.onclick = () => { st[st.tab === "nurse" ? "nurse" : "admin"] = b.dataset.id; draw(); });
+        box.querySelector("form").onsubmit = async e => {
+          e.preventDefault();
+          const id = st.tab === "nurse" ? st.nurse : st.admin;
+          if (!id) return draw("Choisissez d'abord votre nom.");
+          const go = box.querySelector(".lg-go"); go.disabled = true; go.textContent = "Vérification…";
+          const { status, json } = await Auth.post("/api/login", { role: st.tab, id, pin: pin.value });
+          if (status === 200 && json.ok) return resolve(await Auth.me());
+          draw(json.error || (status === 403 ? "Connexion HTTPS requise." : "Connexion impossible."));
+        };
+      };
+      draw();
+    });
+  },
+};
+
+(function () {   // style de l'écran de connexion (partagé)
+  const css = `
+  [hidden] { display: none !important; }
+  .lg { background: #fff; border-radius: 20px; padding: 22px 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 20px -10px rgba(0,0,0,.12); max-width: 440px; margin: 8px auto; }
+  .lg h2 { font-size: 22px; font-weight: 650; margin: 0 0 12px; }
+  .lg-seg { display: grid; grid-template-columns: 1fr 1fr; background: #eef0f4; border-radius: 12px; padding: 4px; gap: 4px; margin-bottom: 14px; }
+  .lg-seg button { appearance: none; border: 0; background: none; font: inherit; font-weight: 600; padding: 10px; border-radius: 9px; cursor: pointer; color: #6b7280; }
+  .lg-seg button.on { background: #fff; color: #1b1f2a; box-shadow: 0 1px 3px rgba(0,0,0,.12); }
+  .lg-seg button:disabled { opacity: .4; cursor: not-allowed; }
+  .lg-lbl { display: block; font-size: 14px; color: #6b7280; margin: 8px 0 6px; }
+  .lg-who { display: grid; gap: 8px; }
+  .lg-who button { appearance: none; border: 1.5px solid #e3e6ec; background: #fff; border-radius: 14px; padding: 14px; font: inherit; font-size: 17px; font-weight: 600; color: #1b1f2a; cursor: pointer; text-align: left; }
+  .lg-who button.on { border-color: #1b1f2a; background: #1b1f2a; color: #fff; }
+  .lg input { width: 100%; font: inherit; font-size: 20px; letter-spacing: .15em; padding: 13px 14px; border: 1.5px solid #e3e6ec; border-radius: 14px; box-sizing: border-box; }
+  .lg input:focus { outline: 2px solid #2563eb; border-color: transparent; }
+  .lg-err { color: #b91c1c; font-size: 14px; min-height: 20px; margin: 8px 0 0; }
+  .lg-warn { background: #fff4e0; color: #8a4b00; border-radius: 10px; padding: 10px 12px; font-size: 14px; margin: 0 0 12px; }
+  .lg-go { appearance: none; border: 0; width: 100%; margin-top: 8px; padding: 15px; border-radius: 14px; background: #1e9e57; color: #fff; font: inherit; font-size: 17px; font-weight: 650; cursor: pointer; }
+  .lg-go:disabled { opacity: .6; }`;
+  const el = document.createElement("style");
+  el.textContent = css;
+  document.head.appendChild(el);
+})();
