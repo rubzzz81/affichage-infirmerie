@@ -157,8 +157,9 @@ L'état courant est dans `state.json` (non versionné). Pour tout remettre à z�
 | `GET /api/state` | État courant (JSON) |
 | `GET /api/events` | Flux temps réel (Server-Sent Events) |
 | `GET /stats` | Tableau de bord des statistiques |
-| `GET /api/stats?from=AAAA-MM-JJ&to=AAAA-MM-JJ` | Statistiques de la période (JSON) |
-| `GET /api/stats.csv`, `GET /api/events.csv` | Exports CSV : résumé par infirmière, détail de chaque changement d'état |
+| `GET /api/stats?from=AAAA-MM-JJ&to=AAAA-MM-JJ[&nurse=<id>]` | Statistiques de la période (JSON), pour toutes les infirmières ou une seule |
+| `GET /api/stats.csv`, `GET /api/events.csv` (mêmes paramètres) | Exports CSV : résumé par infirmière, détail de chaque changement d'état |
+| `GET /stats?nurse=<id>` | Tableau de bord, ouvert sur une infirmière (lien personnel) |
 | `GET /logo` | Logo de l'établissement |
 | `POST /api/set` | Modifier un état. Corps JSON : `{"id":"dupont","status":"pause","back":"14:30","pin":"…"}` ; ou `{"id","start","end"}` pour les horaires ; ou `{"id","resetHours":true}` |
 

@@ -53,6 +53,7 @@
   </header>
 
   <div class="card noprint">
+    <div class="bar" id="who" style="margin-bottom:12px"></div>
     <div class="bar" id="presets"></div>
     <div class="bar" style="margin-top:10px">
       <label>Du <input type="date" id="from"></label>
@@ -95,6 +96,9 @@
     ["Année scolaire", () => [schoolYearStart, today]],
   ];
   let current = null, active = 1;
+  let ORDER = [], NAMES = {}, who = new URLSearchParams(location.search).get("nurse") || "";   // who : "" = toutes
+  const col = n => NCOL[Math.max(0, ORDER.indexOf(n.id)) % 4];
+  const WEEK = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 
   const fmtDur = s => {
     if (s == null) return "—";
@@ -118,22 +122,30 @@
     return asText ? r : r.json();
   }
 
-  function query() { return `from=${$("from").value}&to=${$("to").value}`; }
+  function query() { return `from=${$("from").value}&to=${$("to").value}` + (who ? `&nurse=${encodeURIComponent(who)}` : ""); }
+
+  function drawWho() {
+    $("who").innerHTML = '<b style="font-size:14px;margin-right:4px">Infirmière :</b>' +
+      [["", "Toutes"], ...ORDER.map(id => [id, NAMES[id]])].map(([id, l]) =>
+        `<button class="chip ${id === who ? "on" : ""}" data-who="${esc(id)}">${esc(l)}</button>`).join("");
+  }
 
   async function load() {
     $("out").innerHTML = '<div class="card empty">Chargement…</div>';
     try { current = await api("/api/stats?" + query()); } catch (e) { $("out").innerHTML = `<div class="card empty">${esc(e.message)}</div>`; return; }
     $("min").textContent = current.minEventSeconds;
-    $("period").textContent = `Période : du ${new Date(current.from + "T12:00").toLocaleDateString("fr-FR", { dateStyle: "long" })} au ${new Date(current.to + "T12:00").toLocaleDateString("fr-FR", { dateStyle: "long" })}`;
+    $("period").textContent = `Période : du ${new Date(current.from + "T12:00").toLocaleDateString("fr-FR", { dateStyle: "long" })} au ${new Date(current.to + "T12:00").toLocaleDateString("fr-FR", { dateStyle: "long" })}` + (who ? ` · ${NAMES[who] || who}` : "");
+    try { history.replaceState(null, "", `?${query()}`); } catch (e) {}
     render(current);
   }
 
   function render(s) {
     const any = s.nurses.some(n => n.attendanceSec > 0 || n.consultations > 0);
     if (!any) { $("out").innerHTML = '<div class="card empty">Aucune activité enregistrée sur cette période.</div>'; return; }
-    const cards = s.nurses.map((n, i) => `
+    const single = s.nurses.length === 1;
+    const cards = s.nurses.map(n => `
       <div class="card">
-        <h2><span class="dot" style="background:${NCOL[i % 4]}"></span>${esc(n.name)}</h2>
+        <h2><span class="dot" style="background:${col(n)}"></span>${esc(n.name)}</h2>
         <div class="kpis">
           <div class="kpi"><b>${n.consultations}</b><span>élèves reçus</span></div>
           <div class="kpi"><b>${fmtDur(n.avgConsultSec)}</b><span>durée moyenne</span></div>
@@ -146,37 +158,43 @@
         </table>
       </div>`).join("");
     const t = s.total;
+    const who1 = single ? "" : "Un groupe de barres par jour, une couleur par infirmière.";
     $("out").innerHTML = `
-      <div class="card"><div class="bar"><b style="font-size:15px">Tous cabinets</b>
+      ${single ? "" : `<div class="card"><div class="bar"><b style="font-size:15px">Tous cabinets</b>
         <span class="spacer"></span>
         <span><b style="font-size:22px">${t.consultations}</b> élèves reçus</span> ·
         <span><b style="font-size:22px">${fmtDur(t.avgConsultSec)}</b> en moyenne</span> ·
-        <span><b style="font-size:22px">${t.occupancy == null ? "—" : Math.round(t.occupancy * 100) + " %"}</b> d'occupation</span></div></div>
+        <span><b style="font-size:22px">${t.occupancy == null ? "—" : Math.round(t.occupancy * 100) + " %"}</b> d'occupation</span></div></div>`}
       <div class="grid">${cards}</div>
-      <div class="card"><h2>Élèves reçus par jour</h2><div class="hint">Un groupe de barres par jour, une couleur par infirmière.</div>${legend(s)}<div id="c1"></div></div>
-      <div class="card"><h2>Affluence selon l'heure</h2><div class="hint">Nombre de consultations commencées à chaque heure de la journée, sur toute la période.</div>${legend(s)}<div id="c2"></div></div>
-      <div class="card"><h2>Répartition du temps de présence</h2><div class="hint">Part de chaque état dans le temps où l'infirmière est au cabinet (présente, en consultation, absente un instant).</div><div id="c3"></div></div>`;
-    $("c1").innerHTML = barChart(s.nurses.map(n => n.daily.map(d => d.count)), s.nurses[0].daily.map(d => fmtDay(d.date)), s.nurses.map(n => n.name), "élève(s)");
-    $("c2").innerHTML = barChart(s.nurses.map(n => n.hourly.slice(7, 20)), Array.from({ length: 13 }, (_, i) => `${i + 7}h`), s.nurses.map(n => n.name), "consultation(s)");
-    $("c3").innerHTML = stacked(s);
+      <div class="card"><h2>Élèves reçus par jour</h2><div class="hint">${who1 || "Nombre de consultations chaque jour."}</div>${legend(s)}<div id="c1"></div></div>
+      <div class="card"><h2>Durée moyenne d'une consultation, par jour</h2><div class="hint">En minutes. Un jour sans consultation n'a pas de barre.</div>${legend(s)}<div id="c2"></div></div>
+      <div class="card"><h2>Élèves reçus selon le jour de la semaine</h2><div class="hint">Total sur la période : repérer les jours chargés.</div>${legend(s)}<div id="c3"></div></div>
+      <div class="card"><h2>Affluence selon l'heure</h2><div class="hint">Nombre de consultations commencées à chaque heure de la journée, sur toute la période.</div>${legend(s)}<div id="c4"></div></div>
+      <div class="card"><h2>Répartition du temps de présence</h2><div class="hint">Part de chaque état dans le temps où ${single ? "elle" : "l'infirmière"} est au cabinet (présente, en consultation, absente un instant).</div><div id="c5"></div></div>`;
+    const names = s.nurses.map(n => n.name), colors = s.nurses.map(col);
+    $("c1").innerHTML = barChart(s.nurses.map(n => n.daily.map(d => d.count)), s.nurses[0].daily.map(d => fmtDay(d.date)), names, "élève(s)", colors);
+    $("c2").innerHTML = barChart(s.nurses.map(n => n.daily.map(d => d.count ? Math.round(d.sec / d.count / 60 * 10) / 10 : 0)), s.nurses[0].daily.map(d => fmtDay(d.date)), names, "min", colors);
+    $("c3").innerHTML = barChart(s.nurses.map(n => { const w = [0, 0, 0, 0, 0, 0, 0]; n.daily.forEach(d => { w[(new Date(d.date + "T12:00").getDay() + 6) % 7] += d.count; }); return w; }), WEEK, names, "élève(s)", colors);
+    $("c4").innerHTML = barChart(s.nurses.map(n => n.hourly.slice(7, 20)), Array.from({ length: 13 }, (_, i) => `${i + 7}h`), names, "consultation(s)", colors);
+    $("c5").innerHTML = stacked(s);
   }
 
-  const legend = s => `<div class="legend">${s.nurses.map((n, i) => `<span><i style="background:${NCOL[i % 4]}"></i>${esc(n.name)}</span>`).join("")}</div>`;
+  const legend = s => s.nurses.length < 2 ? "" : `<div class="legend">${s.nurses.map(n => `<span><i style="background:${col(n)}"></i>${esc(n.name)}</span>`).join("")}</div>`;
 
-  function barChart(series, labels, names, unit) {
+  function barChart(series, labels, names, unit, colors) {
     const W = 1000, H = 260, L = 34, B = 30, T = 14, R = 8, n = labels.length, k = series.length;
     const max = Math.max(1, ...series.flat()), top = max <= 5 ? max : Math.ceil(max / 5) * 5;
     const gw = (W - L - R) / n, bw = Math.max(2, Math.min(34, (gw * 0.78) / k));
     let g = "";
     for (let i = 0; i <= 4; i++) {
-      const v = Math.round(top * i / 4), y = T + (H - T - B) * (1 - i / 4);
+      const v = +(top * i / 4).toFixed(top < 8 ? 1 : 0), y = T + (H - T - B) * (1 - i / 4);
       g += `<line x1="${L}" x2="${W - R}" y1="${y}" y2="${y}" stroke="#e3e6ec"/><text x="${L - 6}" y="${y + 4}" text-anchor="end">${v}</text>`;
     }
     const step = Math.ceil(n / 14);
     labels.forEach((lab, i) => { if (i % step === 0) g += `<text x="${L + gw * (i + .5)}" y="${H - 10}" text-anchor="middle">${esc(lab)}</text>`; });
     series.forEach((vals, j) => vals.forEach((v, i) => {
       const h = (H - T - B) * v / top, x = L + gw * (i + .5) - (bw * k) / 2 + bw * j;
-      g += `<rect x="${x}" y="${H - B - h}" width="${bw - 1}" height="${Math.max(h, v ? 1 : 0)}" rx="2" fill="${NCOL[j % 4]}"><title>${esc(names[j])} · ${esc(labels[i])} : ${v} ${unit}</title></rect>`;
+      g += `<rect x="${x}" y="${H - B - h}" width="${bw - 1}" height="${Math.max(h, v ? 1 : 0)}" rx="2" fill="${colors[j]}"><title>${esc(names[j])} · ${esc(labels[i])} : ${v} ${unit}</title></rect>`;
       if (v && gw > 38) g += `<text x="${x + (bw - 1) / 2}" y="${H - B - h - 4}" text-anchor="middle" style="fill:var(--ink)">${v}</text>`;
     }));
     return `<svg viewBox="0 0 ${W} ${H}" width="100%" role="img" aria-label="Graphique en barres">${g}</svg>`;
@@ -208,18 +226,29 @@
     load();
   }
 
+  $("who").addEventListener("click", e => {
+    const b = e.target.closest("[data-who]"); if (!b) return;
+    who = b.dataset.who; drawWho(); load();
+  });
   $("presets").innerHTML = PRESETS.map(([l], i) => `<button class="chip" data-i="${i}">${l}</button>`).join("");
   $("presets").addEventListener("click", e => { const b = e.target.closest("[data-i]"); if (b) setRange(PRESETS[b.dataset.i][1](), +b.dataset.i); });
   $("apply").onclick = () => { document.querySelectorAll("#presets .chip").forEach(c => c.classList.remove("on")); load(); };
   $("csv1").onclick = () => download("/api/stats.csv?" + query());
   $("csv2").onclick = () => download("/api/events.csv?" + query());
 
+  // Démarrage : on connaît d'abord les infirmières (sélecteur), puis on charge la période.
+  const q = new URLSearchParams(location.search);
+  const start = () => {
+    if (q.get("from") && q.get("to")) { $("from").value = q.get("from"); $("to").value = q.get("to"); load(); }
+    else setRange(PRESETS[1][1](), 1);
+  };
   fetch("/api/state").then(r => r.json()).then(d => {
     $("school").textContent = `${d.school || ""} · ${d.title || ""}`;
-  }).catch(() => {});
-  const q = new URLSearchParams(location.search);
-  if (q.get("from") && q.get("to")) { $("from").value = q.get("from"); $("to").value = q.get("to"); load(); }
-  else setRange(PRESETS[1][1](), 1);
+    ORDER = d.nurses.map(n => n.id);
+    d.nurses.forEach(n => { NAMES[n.id] = n.name; });
+    if (who && !NAMES[who]) who = "";
+    drawWho();
+  }).catch(() => {}).then(start);
 </script>
 </body>
 </html>

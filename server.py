@@ -274,21 +274,24 @@ def _ts(d):
     return int(datetime.datetime.combine(d, datetime.time.min).timestamp())
 
 
-def fetch_events(d_from, d_to):
+def fetch_events(d_from, d_to, nurse=None):
+    """Événements de la période ; nurse = identifiant pour n'en garder qu'une."""
     t0, t1, now = _ts(d_from), _ts(d_to + datetime.timedelta(days=1)), now_ts()
     rows = db.execute(
         'SELECT nurse, status, start, COALESCE("end", ?), auto FROM events '
         'WHERE start < ? AND COALESCE("end", ?) > ? ORDER BY start', (now, t1, now, t0)).fetchall()
-    return t0, t1, [r for r in rows if r[0] in NURSES and r[3] - r[2] >= MIN_EVENT_SECONDS]
+    return t0, t1, [r for r in rows if r[0] in NURSES and nurse in (None, r[0])
+                    and r[3] - r[2] >= MIN_EVENT_SECONDS]
 
 
-def compute_stats(d_from, d_to):
-    t0, t1, rows = fetch_events(d_from, d_to)
+def compute_stats(d_from, d_to, nurse=None):
+    t0, t1, rows = fetch_events(d_from, d_to, nurse)
     days = [d_from + datetime.timedelta(days=i) for i in range((d_to - d_from).days + 1)]
     per = {nid: {"id": nid, "name": n["name"],
                  "states": {s: {"count": 0, "sec": 0} for s in STATUSES},
                  "daily": {d.isoformat(): {"count": 0, "sec": 0} for d in days},
-                 "hourly": [0] * 24, "consultDurations": []} for nid, n in NURSES.items()}
+                 "hourly": [0] * 24, "consultDurations": []}
+           for nid, n in NURSES.items() if nurse in (None, nid)}
     for nid, status, start, end, auto in rows:
         p = per[nid]
         sec = min(end, t1) - max(start, t0)
@@ -352,8 +355,8 @@ def stats_csv(stats):
     return out.getvalue()
 
 
-def events_csv(d_from, d_to):
-    _, _, rows = fetch_events(d_from, d_to)
+def events_csv(d_from, d_to, nurse=None):
+    _, _, rows = fetch_events(d_from, d_to, nurse)
     out = io.StringIO()
     w = csv.writer(out, delimiter=";")
     w.writerow(["Infirmière", "État", "Début", "Fin", "Durée (min)", "Origine"])
@@ -405,15 +408,20 @@ class Handler(BaseHTTPRequestHandler):
     def stats_request(self, parsed, kind):
         if not check_pin(self.headers.get("X-Pin")):
             return self.send_json(403, {"error": "Code incorrect"})
-        period = parse_period(urllib.parse.parse_qs(parsed.query))
+        query = urllib.parse.parse_qs(parsed.query)
+        period = parse_period(query)
         if not period:
             return self.send_json(400, {"error": "Dates invalides (AAAA-MM-JJ)"})
+        nurse = query.get("nurse", [""])[0] or None        # filtre : une seule infirmière
+        if nurse is not None and nurse not in NURSES:
+            return self.send_json(400, {"error": "Infirmière inconnue"})
         with lock:
             if kind == "json":
-                return self.send_json(200, compute_stats(*period))
-            body = (stats_csv(compute_stats(*period)) if kind == "summary"
-                    else events_csv(*period))
-        name = f"{'statistiques' if kind == 'summary' else 'evenements'}_{period[0]}_{period[1]}.csv"
+                return self.send_json(200, compute_stats(*period, nurse))
+            body = (stats_csv(compute_stats(*period, nurse)) if kind == "summary"
+                    else events_csv(*period, nurse))
+        name = (f"{'statistiques' if kind == 'summary' else 'evenements'}"
+                f"{'_' + nurse if nurse else ''}_{period[0]}_{period[1]}.csv")
         self.send_bytes(200, ("﻿" + body).encode("utf-8"), "text/csv; charset=utf-8",
                         {"Content-Disposition": f'attachment; filename="{name}"'})
 

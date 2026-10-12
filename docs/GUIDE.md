@@ -499,6 +499,16 @@ Les données de la capture ci-dessous sont **fictives** (démonstration sur 4 se
 
 ![Tableau de bord des statistiques](img/stats-1-tableau-de-bord.png)
 
+**Choisir l'infirmière** : la ligne « Infirmière » en haut permet de voir **toutes les infirmières** côte à côte, ou **une seule** (*Mme Broux*, *Mme Glinka*…). Le choix s'applique aux chiffres, aux graphiques et aux exports CSV.
+
+**Lien personnel** : chaque infirmière peut ouvrir directement ses propres statistiques avec `http://<IP>:8080/stats?nurse=<id>` (par exemple `…/stats?nurse=broux`). Sur la page des infirmières, le lien en bas devient **« Mes statistiques »** dès qu'elle a choisi son nom.
+
+Vue d'une seule infirmière (données **fictives** de démonstration) :
+
+![Statistiques d'une seule infirmière](img/stats-2-par-infirmiere.png)
+
+> Ce filtre sert à **présenter** les chiffres d'une personne, pas à les protéger : toute personne qui peut ouvrir `/stats` (et connaît le code d'accès s'il y en a un) peut voir les statistiques de toutes les infirmières.
+
 **Choisir la période** : *Aujourd'hui*, *7 derniers jours*, *30 derniers jours*, *Ce mois-ci*, *Année scolaire*, ou deux dates au choix puis **Afficher**.
 
 **Ce que la page indique, pour chaque infirmière et pour l'ensemble des cabinets**
@@ -513,6 +523,8 @@ Les données de la capture ci-dessous sont **fictives** (démonstration sur 4 se
 
 **Les graphiques**
 - *Élèves reçus par jour* : une barre par infirmière et par jour ;
+- *Durée moyenne d'une consultation, par jour* : en minutes, pour voir si les consultations s'allongent ;
+- *Élèves reçus selon le jour de la semaine* : total par lundi, mardi, etc., pour repérer les jours chargés ;
 - *Affluence selon l'heure* : à quelles heures les consultations commencent (repérer les heures de pointe) ;
 - *Répartition du temps de présence* : part de la présence, de la consultation et des absences brèves.
 
@@ -520,8 +532,8 @@ Les données de la capture ci-dessous sont **fictives** (démonstration sur 4 se
 
 | Besoin | Moyen |
 |---|---|
-| Ouvrir dans Excel / LibreOffice | **Exporter le résumé (CSV)** : une ligne par infirmière |
-| Analyse détaillée | **Exporter le détail (CSV)** : chaque changement d'état, avec début, fin, durée et origine (manuelle ou automatique) |
+| Ouvrir dans Excel / LibreOffice | **Exporter le résumé (CSV)** : une ligne par infirmière (ou une seule si une infirmière est sélectionnée) |
+| Analyse détaillée | **Exporter le détail (CSV)** : chaque changement d'état, avec début, fin, durée et origine (manuelle ou automatique) ; limité à l'infirmière sélectionnée, le nom du fichier l'indique |
 | Rapport pour la direction | **Imprimer / PDF** : la mise en page est prévue pour l'impression ; choisir « Enregistrer au format PDF » |
 
 Les fichiers CSV utilisent le point-virgule et la virgule décimale : ils s'ouvrent directement dans Excel français.

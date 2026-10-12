@@ -49,7 +49,7 @@
 <div class="wrap">
   <header><img id="logo" src="/logo" alt=""><h1 id="head"></h1></header>
   <div id="app"></div>
-  <div class="foot"><a class="link" href="/" target="_blank">Voir l'écran d'affichage</a> · <a class="link" href="/stats">Statistiques</a></div>
+  <div class="foot"><a class="link" href="/" target="_blank">Voir l'écran d'affichage</a> · <a class="link" id="statlink" href="/stats">Statistiques</a></div>
 </div>
 <div class="toast" id="toast"></div>
 <script src="/static/common.js"></script>
@@ -129,6 +129,9 @@
     head.textContent = ""; head.append(data.school || "", document.createElement("br"), data.title || "");
     document.title = (data.title || "Cabinet") + " - Ma présence";
     if (me && !data.nurses.some(n => n.id === me)) me = null;
+    const sl = document.getElementById("statlink");   // « Mes statistiques » : ses propres chiffres
+    sl.href = me ? "/stats?nurse=" + encodeURIComponent(me) : "/stats";
+    sl.textContent = me ? "Mes statistiques" : "Statistiques";
     if (!me && !showAll) {
       app.innerHTML = `<div class="card"><h2>Qui êtes-vous ?</h2><p style="color:var(--muted);margin:6px 0 14px">À ne faire qu'une fois sur cet appareil.</p>
         <div class="who">${data.nurses.map(n => `<button class="btn" data-act="me" data-id="${n.id}">${n.name}</button>`).join("")}</div></div>`;
