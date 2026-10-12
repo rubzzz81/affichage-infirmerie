@@ -680,7 +680,12 @@ class Handler(BaseHTTPRequestHandler):
             if role in ("admin", "stats"):               # sous-domaine : le site est à la racine
                 self.serve_page(role)
             elif not self.may_read_state():               # écran public vu d'Internet : on renvoie vers la connexion
-                self.send_bytes(302, b"", "text/plain", {"Location": site_url(HOSTS["admin"]) if HOSTS else "/admin"})
+                # Même nom d'hôte, chemin relatif : un visiteur arrivé par une adresse IP ou un nom que
+                # nous ne connaissons pas ne doit JAMAIS être renvoyé vers un autre nom (ex. un « .local »
+                # introuvable depuis Internet). Le nom du site « admin » n'est utilisé que si le visiteur
+                # est déjà arrivé par l'un de nos noms.
+                to = site_url(HOSTS["admin"]) if (HOSTS and role is not None) else "/admin"
+                self.send_bytes(302, b"", "text/plain", {"Location": to})
             else:
                 self.send_static("index.html")
         elif path in ("/admin", "/stats"):

@@ -126,7 +126,7 @@
   }
 
   function footer() {
-    const u = (data && data.urls) || {};            // sous-domaines : liens vers les autres sites
+    const u = siteUrls(data && data.urls);            // sous-domaines : liens vers les autres sites (si on y est arrivé par leur nom)
     document.getElementById("foot").innerHTML =
       `<div>Connectée : <b>${who.name}</b> · <button class="link" data-act="logout">Se déconnecter</button></div>
        <div><a class="link" href="${u.public || "/"}" target="_blank">Voir l'écran d'affichage</a> · <a class="link" href="${u.stats || "/stats"}">Mes statistiques</a></div>`;

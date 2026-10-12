@@ -244,7 +244,7 @@
     }
     $("ctl").hidden = false; $("note").hidden = false;
     const d = await fetch("/api/state").then(r => r.json()).catch(() => null);
-    const adminUrl = (d && d.urls && d.urls.admin) || "/admin";           // sous-domaine du panneau si configuré
+    const adminUrl = siteUrls(d && d.urls).admin || "/admin";           // sous-domaine du panneau si on y est arrivé par son nom
     $("user").innerHTML = `${esc(me.name)} · <a href="#" id="logout">Se déconnecter</a>` +
       (me.role === "nurse" ? ` · <a href="${esc(adminUrl)}">Mon panneau</a>` : "");
     $("logout").onclick = e => { e.preventDefault(); Auth.logout(); };

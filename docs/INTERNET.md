@@ -235,6 +235,11 @@ La ligne doit montrer **l'adresse publique du téléphone** et « (externe) ». 
 masque l'origine des visiteurs (NAT source). L'application les traite alors comme externes (c'est la protection voulue) mais le blocage par
 adresse perd son sens : **demandez de supprimer le NAT source**.
 
+**Tester par l'adresse IP publique.** Vous pouvez joindre le panneau par `https://45.15.220.130:8443/admin` (ou `/stats`) avant que le DNS existe.
+Le navigateur affiche alors un avertissement de certificat : il est normal tant que le certificat ne couvre pas cette adresse (voir 3.4).
+L'application **reste sur l'adresse tapée** : elle ne renvoie jamais un visiteur vers un nom `.local` qu'il ne sait pas résoudre depuis Internet.
+**Attention au port :** le port 443 de cette adresse peut être pris par un autre service (ici un nginx) ; il faut alors garder `:8443`.
+
 ### 3.9 Ouvrir progressivement
 
 1. Ouvrir d'abord la redirection **pour votre seule adresse IP de test** (règle du pare-feu limitée à une adresse), et vérifier de bout en bout.

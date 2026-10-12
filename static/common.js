@@ -126,3 +126,13 @@ const Auth = {
   el.textContent = css;
   document.head.appendChild(el);
 })();
+
+// Adresses des autres sites (écran public, panneau, statistiques), SEULEMENT si l'on est arrivé par l'un de
+// leurs noms. Arrivé par une adresse IP ou un autre nom (cas d'Internet), les liens restent relatifs :
+// on ne renvoie jamais vers un nom que le visiteur ne sait pas résoudre (par exemple un « .local »).
+function siteUrls(urls) {
+  try {
+    const hosts = Object.values(urls || {}).map(u => new URL(u).hostname);
+    return hosts.includes(location.hostname) ? urls : {};
+  } catch (e) { return {}; }
+}
