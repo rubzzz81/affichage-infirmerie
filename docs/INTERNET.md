@@ -81,14 +81,40 @@ tant que ce code n'est pas bon.** Remettre les codes **en main propre**.
 
 ### 3.2 Changer l'adresse du Pi (10.255.5.223, passerelle 10.255.5.202)
 
-Le Pi est aujourd'hui en `10.5.35.101/8`. **À faire devant le Pi** (la connexion SSH/VNC est coupée au changement) :
-```bash
-sh ~/cabinet/deploy/set-static-ip.sh 10.255.5.223/24 10.255.5.202
-```
-- Le **masque** (`/24` ci-dessus) est à confirmer avec le service informatique : `/24` = `255.255.255.0`, `/8` = `255.0.0.0`.
-- Le script demande le mot de passe `sudo`, applique l'adresse, puis attend **120 secondes** que vous confirmiez, depuis la **nouvelle** adresse, avec `touch /tmp/cabinet-ip-ok`. **Sans confirmation, l'ancienne configuration revient toute seule** : une faute de frappe ne vous enferme pas dehors.
-- Ensuite : mettre à jour le DNS interne, les favoris et le fichier `~/.ssh/known_hosts`, et vérifier que l'écran du couloir s'affiche toujours (il utilise `localhost`, donc rien à changer).
+Le Pi est aujourd'hui en `10.5.35.101/8`. **À faire de préférence devant le Pi** (clavier + écran) : la connexion SSH ou VNC est coupée au changement,
+et **votre PC peut ne plus joindre le Pi** s'il n'est pas sur le même réseau que la nouvelle adresse. C'est normal : ce n'est pas un échec.
 
+1. **Essai à blanc** (aucune modification, ne demande pas `sudo`) : il lit la configuration actuelle et contrôle vos valeurs.
+   ```bash
+   sh ~/cabinet/deploy/set-static-ip.sh 10.255.5.223/24 10.255.5.202 --dry-run
+   ```
+2. **Le vrai changement** (demande le mot de passe `sudo`) :
+   ```bash
+   sh ~/cabinet/deploy/set-static-ip.sh 10.255.5.223/24 10.255.5.202
+   ```
+3. **Lire le résultat** (il survit au redémarrage) :
+   ```bash
+   cat ~/cabinet-ip.log
+   hostname -I
+   ```
+
+**Ce que fait le script**
+- **Refuse les fautes évidentes** avant de toucher à quoi que ce soit : adresse sans masque, adresse invalide, et surtout une **passerelle qui n'est pas dans le même sous-réseau** que l'adresse (le cas qui coupe le Pi du réseau).
+- **Sauvegarde** l'ancienne configuration dans `~/cabinet-ip-backup.txt`, avec la commande pour revenir en arrière à la main.
+- **Applique** la nouvelle adresse, puis **vérifie que la passerelle répond** (ping, pendant 30 secondes). Si elle répond : terminé. Sinon, l'ancienne configuration est **restaurée automatiquement**.
+- Relance ensuite l'application (pour que l'annonce du nom `.local` suive la nouvelle adresse).
+
+> **Le masque** (`/24` ci-dessus) est à confirmer avec le service informatique : `/24` = `255.255.255.0`, `/8` = `255.0.0.0`.
+> Avec `/24`, l'adresse et la passerelle doivent partager les trois premiers nombres (`10.255.5.x`).
+>
+> **Si l'adresse revient à l'ancienne** : lisez `~/cabinet-ip.log`. La ligne `ÉCHEC - la passerelle … ne répond pas` signifie que le Pi n'a pas pu joindre
+> la passerelle sur ce réseau (câble branché sur le mauvais réseau, mauvaise passerelle, adresse déjà prise, port du switch dans un autre VLAN) : le retour arrière est alors voulu.
+> Option `--confirm` : exige en plus un `touch /tmp/cabinet-ip-ok` dans les 120 s.
+>
+> **Le câble réseau** doit être branché sur le réseau qui porte `10.255.5.0/24` (celui de la passerelle `10.255.5.202`) *avant* de lancer le changement.
+
+Ensuite : mettre à jour le DNS interne, les favoris et `~/.ssh/known_hosts`, et **relancer `sh deploy/setup-https.sh`** si vous utilisez encore le certificat local
+(il porte l'ancienne adresse). L'écran du couloir n'a rien à changer (il utilise `localhost`).
 ### 3.3 Les noms DNS (domaine du lycée)
 
 Créer, chez l'hébergeur du domaine, les enregistrements **A** vers l'adresse publique **45.15.220.130** :

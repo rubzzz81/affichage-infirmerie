@@ -143,6 +143,18 @@ class Responder(threading.Thread):
             if time.time() - last > 60:                 # ré-annonce périodique
                 last = time.time()
                 try:
+                    new_ip = local_ip()
+                except OSError:
+                    new_ip = self.ip
+                if new_ip != self.ip:                   # le Pi a changé d'adresse : on rouvre la socket sur la nouvelle
+                    self.log(f"[mdns] adresse changée : {self.ip} -> {new_ip}")
+                    self.ip = new_ip
+                    try:
+                        s.close()
+                        s = self._socket()
+                    except OSError:
+                        pass
+                try:
                     self.announce(s)
                 except OSError:
                     pass
