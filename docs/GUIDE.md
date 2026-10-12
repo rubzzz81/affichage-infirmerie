@@ -387,7 +387,7 @@ grep '^password=' ~/.config/wayvnc/config
 
 **Se connecter depuis l'autre PC**
 1. Installer un client VNC gratuit : [RealVNC Viewer](https://www.realvnc.com/fr/connect/download/viewer/) ou [TigerVNC](https://tigervnc.org/) (les deux sont compatibles).
-2. Se connecter à `<IP>:5900` (par exemple `10.5.35.101:5900`).
+2. Se connecter à l'adresse du Pi **sans préciser de port** : `10.5.35.101` (le port 5900 est le port par défaut). Si vous devez absolument le préciser, écrivez-le avec **deux** deux-points : `10.5.35.101::5900`. Avec un seul (`10.5.35.101:5900`), TigerVNC l'interprète comme un numéro d'écran et tente le port 59000, qui échoue avec « connexion refusée ».
 3. Accepter l'avertissement sur le certificat à la première connexion : c'est normal, le certificat est auto-signé et propre à ce Pi.
 4. Saisir l'utilisateur `vnc` et le mot de passe.
 
