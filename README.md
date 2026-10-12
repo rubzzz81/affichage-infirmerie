@@ -87,6 +87,7 @@ Aucun `sudo` n'est nécessaire pour l'application.
 
 - **Veille / extinction de l'écran** : `sudo raspi-config` → *Display Options* → *Screen Blanking* → désactiver.
 - **Adresse IP fixe** : demander une réservation DHCP pour le Pi au service informatique, pour que l'adresse ne change pas.
+- **Accès à distance (VNC)** : `sh deploy/setup-vnc.sh` active le bureau à distance (chiffré, avec mot de passe) sur le port 5900, pour dépanner depuis un autre PC. Voir la section 8.4 du [guide](docs/GUIDE.md).
 
 ## Utilisation par les infirmières
 

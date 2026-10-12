@@ -365,6 +365,44 @@ Sans code, toute personne du réseau du lycée qui connaît l'adresse `/admin` p
    ```
 3. Au premier changement d'état sur chaque téléphone, le code est demandé, puis retenu sur l'appareil.
 
+### 8.4 Accès à distance au bureau du Pi (VNC)
+
+Le VNC permet de **voir et piloter l'écran du Pi depuis un autre PC** du réseau, sans se déplacer devant l'écran du couloir : utile pour dépanner, vérifier l'affichage ou ouvrir un navigateur sur le Pi. Il utilise `wayvnc`, le serveur VNC fourni avec Raspberry Pi OS pour le bureau actuel (Wayland).
+
+**Installation** (sur le Pi, en SSH, sans `sudo`) :
+```bash
+sh ~/cabinet/deploy/setup-vnc.sh
+```
+Le script :
+- crée un **certificat TLS** (connexion chiffrée) et une clé RSA dans `~/.config/wayvnc/` ;
+- génère un **mot de passe aléatoire** pour l'utilisateur `vnc`, stocké dans `~/.config/wayvnc/config` (lisible uniquement par votre compte) ;
+- installe et active le service utilisateur `wayvnc.service`, démarré avec le bureau et relancé s'il s'arrête.
+
+Il peut être relancé sans risque : le mot de passe et le certificat existants ne sont jamais écrasés.
+
+**Récupérer le mot de passe** (sur le Pi, en SSH) :
+```bash
+grep '^password=' ~/.config/wayvnc/config
+```
+
+**Se connecter depuis l'autre PC**
+1. Installer un client VNC gratuit : [RealVNC Viewer](https://www.realvnc.com/fr/connect/download/viewer/) ou [TigerVNC](https://tigervnc.org/) (les deux sont compatibles).
+2. Se connecter à `<IP>:5900` (par exemple `10.5.35.101:5900`).
+3. Accepter l'avertissement sur le certificat à la première connexion : c'est normal, le certificat est auto-signé et propre à ce Pi.
+4. Saisir l'utilisateur `vnc` et le mot de passe.
+
+Vous voyez alors l'écran du couloir en direct, avec la souris et le clavier.
+
+✅ **Vérification** : le bureau (ici, la page d'affichage plein écran) apparaît dans le client VNC.
+
+**À savoir**
+- **Contrôle** : toute personne connectée pilote le Pi. En mode kiosque, fermer Chromium le relance tout seul après 2 secondes.
+- **Sécurité** : le port 5900 est ouvert à tout le réseau du lycée. La connexion est chiffrée et protégée par mot de passe, mais ne l'exposez **jamais sur Internet** (pas de redirection de port). Pour restreindre l'accès à certains PC, demandez au service informatique de filtrer le port 5900.
+- **Changer le mot de passe** : éditer la ligne `password=` de `~/.config/wayvnc/config`, puis `systemctl --user restart wayvnc.service`.
+- **Désactiver le VNC** : `systemctl --user disable --now wayvnc.service`.
+- **Dépannage** : `systemctl --user status wayvnc.service` (état), `journalctl --user -u wayvnc.service -n 20` (journaux). Le service a besoin que le bureau soit ouvert : il redémarre seul tant que ce n'est pas le cas.
+- **Autre solution** : l'outil officiel RealVNC (`vncserver-x11-serviced`) est aussi installé mais désactivé ; son activation demande `sudo` (`sudo raspi-config` → *Interface Options* → *VNC*).
+
 ## 9. Utilisation par les infirmières
 
 ### 9.1 Ouvrir la page
@@ -602,6 +640,7 @@ Téléphone / PC infirmière ──► /admin ──POST /api/set──┐
 | `data.db` | Journal des changements d'état, base SQLite (non versionnée) |
 | `static/common.js` | Statuts, couleurs et fonctions partagées |
 | `deploy/install.sh` | Installation du service et du kiosque |
+| `deploy/setup-vnc.sh` | Accès à distance au bureau du Pi (VNC, chiffré, avec mot de passe) |
 
 Pour les captures d'écran de cette documentation, l'option `?nosse` (par exemple `/?nosse`) désactive le flux temps réel.
 
