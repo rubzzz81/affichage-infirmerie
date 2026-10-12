@@ -69,6 +69,7 @@ Un Raspberry Pi = un établissement (ou un groupe de cabinets qui partagent le m
 | `logo` | Chemin du fichier logo (PNG, JPG ou SVG) | Affiché en haut à gauche de l'écran et des pages |
 | `admins` | Un ou plusieurs comptes administration (direction, vie scolaire) | Accès en lecture seule aux statistiques de toutes les infirmières |
 | `sessionHours` | Durées de connexion (heures) | Infirmières 12 h, administration 2 h par défaut |
+| `domain` | Nom de l'écran public, ex. `pi-<lycee>.local` (le nom d'hôte de votre Pi) ou un nom DNS du lycée | Le panneau et les statistiques ont leur propre site (`…-admin.local`, `…-stats.local`) ; voir [SECURITE.md](SECURITE.md), section 3 |
 | `nurses` | Une entrée par personne | Une colonne par entrée sur l'écran |
 | `nurses[].id` | Court, sans espace ni accent, **unique** | Identifie la personne (liens `?me=`, statistiques) |
 | `nurses[].name` | Le nom affiché (« Mme Dupont », « M. Martin »…) | Titre de la carte |

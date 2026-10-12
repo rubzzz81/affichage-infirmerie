@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installer le certificat de sécurité</title>
+<style>
+  :root { --ink: #1b1f2a; --muted: #6b7280; --line: #e3e6ec; --bg: #f4f5f8; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: "Segoe UI", Roboto, system-ui, sans-serif; background: var(--bg); color: var(--ink); padding: 16px 16px 48px; line-height: 1.5; }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  header img { height: 52px; width: auto; max-width: 120px; object-fit: contain; }
+  h1 { font-size: 22px; }
+  .card { background: #fff; border-radius: 18px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,.04), 0 6px 20px -10px rgba(0,0,0,.12); }
+  h2 { font-size: 17px; margin-bottom: 8px; }
+  p, li { font-size: 15px; }
+  li { margin: 4px 0 4px 20px; }
+  .btn { display: inline-block; margin: 8px 0 4px; padding: 14px 20px; border-radius: 14px; background: #1e9e57; color: #fff; font-weight: 650; text-decoration: none; }
+  code { background: #eef0f4; padding: 2px 6px; border-radius: 6px; font-size: 13px; word-break: break-all; }
+  .fp { display: block; margin-top: 6px; padding: 10px; font-size: 13px; }
+  .muted { color: var(--muted); font-size: 14px; }
+  .warn { background: #fff4e0; color: #8a4b00; border-radius: 12px; padding: 10px 12px; font-size: 14px; margin-top: 10px; }
+  details { margin: 6px 0; } summary { cursor: pointer; font-weight: 600; padding: 6px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><img src="/logo" alt=""><h1>Certificat de sécurité</h1></header>
+
+  <div class="card">
+    <h2>À quoi ça sert ?</h2>
+    <p>Les pages de connexion de l'infirmerie sont <b>chiffrées</b> (HTTPS) pour protéger votre code. Votre appareil doit connaître l'autorité de certification du lycée ; sans cela, le navigateur affiche « connexion non sécurisée ». À faire <b>une seule fois par appareil</b>.</p>
+    <a class="btn" href="/ca.crt" download="certificat-infirmerie.crt">Télécharger le certificat</a>
+    <p class="muted">Avant de l'installer, vérifiez l'empreinte (SHA-256). Elle doit être <b>identique</b> à celle que vous a communiquée la personne qui administre le Pi :</p>
+    <code class="fp" id="fp">chargement…</code>
+    <p class="warn">Si l'empreinte est différente, <b>n'installez pas</b> le fichier.</p>
+  </div>
+
+  <div class="card">
+    <h2>Installation</h2>
+    <details open><summary>Windows (PC)</summary>
+      <ol><li>Ouvrir le fichier téléchargé, puis <b>Installer le certificat…</b></li>
+      <li>Choisir <b>Utilisateur actuel</b>, puis <b>Placer tous les certificats dans le magasin suivant</b> → <b>Parcourir</b> → <b>Autorités de certification racines de confiance</b>.</li>
+      <li>Valider, puis <b>redémarrer le navigateur</b>. (Firefox : Paramètres → Vie privée et sécurité → Certificats → Afficher les certificats → Autorités → Importer.)</li></ol></details>
+    <details><summary>Android</summary>
+      <ol><li>Ouvrir <b>Paramètres → Sécurité</b> (ou <i>Sécurité et confidentialité</i>) <b>→ Chiffrement et identifiants → Installer un certificat → Certificat d'autorité de certification</b>.</li>
+      <li>Confirmer l'avertissement et choisir le fichier téléchargé.</li></ol></details>
+    <details><summary>iPhone / iPad</summary>
+      <ol><li>Ouvrir le fichier téléchargé et autoriser le téléchargement du profil.</li>
+      <li><b>Réglages → Profil téléchargé → Installer.</b></li>
+      <li><b>Réglages → Général → Informations → Réglages des certificats</b> : activer la confiance pour ce certificat.</li></ol></details>
+    <details><summary>Mac</summary>
+      <ol><li>Ouvrir le fichier : <b>Trousseau d'accès</b> s'ouvre ; l'ajouter au trousseau « Session ».</li>
+      <li>Double-cliquer sur le certificat → <b>Confiance</b> → <b>Toujours approuver</b>.</li></ol></details>
+  </div>
+
+  <p class="muted">Ce certificat ne sert qu'à identifier le serveur de l'infirmerie. Il ne donne aucun accès.</p>
+</div>
+<script>
+  fetch("/api/ca").then(r => r.json()).then(d => { document.getElementById("fp").textContent = d.fingerprint; })
+    .catch(() => { document.getElementById("fp").textContent = "indisponible (HTTPS non configuré)"; });
+</script>
+</body>
+</html>

@@ -93,7 +93,7 @@ Aucun `sudo` n'est nécessaire pour l'application.
 
 ## Utilisation par les infirmières
 
-Ouvrir `https://pi-infirmerie.local:8443/admin` sur le téléphone ou le PC (même réseau que le Pi) : le nom `.local` remplace l'adresse IP.
+Ouvrir `https://pi-infirmerie-admin.local:8443/` sur le téléphone ou le PC (même réseau que le Pi) : ce **nom** remplace l'adresse IP, et le panneau a **son propre site**, séparé des statistiques (`pi-infirmerie-stats.local`) et de l'écran public (`pi-infirmerie.local`).
 
 1. Toucher **son nom** puis saisir **son code personnel** ; l'infirmière ne voit que **son** panneau.
 2. Toucher un des 4 boutons pour changer d'état. L'écran se met à jour en moins d'une seconde.
@@ -102,7 +102,7 @@ Ouvrir `https://pi-infirmerie.local:8443/admin` sur le téléphone ou le PC (mê
    « Rétablir les horaires habituels » annule la modification.
 5. **Se déconnecter** en bas de page sur un appareil partagé.
 
-Liens personnels : `https://pi-infirmerie.local:8443/admin?me=<id>` présélectionne le nom (le code reste obligatoire), pratique pour un QR code ou un favori.
+Liens personnels : `https://pi-infirmerie-admin.local:8443/?me=<id>` présélectionne le nom (le code reste obligatoire), pratique pour un QR code ou un favori.
 
 Astuce : ajouter la page à l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil »). Avec `sh deploy/use-standard-ports.sh` (demande `sudo`), l'adresse devient simplement `https://pi-infirmerie.local`.
 
@@ -133,6 +133,7 @@ Détail, installation du certificat sur les appareils, pare-feu, codes oubliés 
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
+  "domain": "pi-infirmerie.local",
   "minEventSeconds": 10,
   "sessionHours": { "nurse": 12, "admin": 2 },
   "admins": [

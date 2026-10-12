@@ -17,6 +17,7 @@ servies qu'en HTTPS : les codes ne circulent jamais en clair.
 """
 import csv
 import datetime
+import hashlib
 import io
 import json
 import mimetypes
@@ -25,12 +26,14 @@ import queue
 import re
 import sqlite3
 import ssl
+import sys
 import threading
 import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from auth import Auth
+from mdns import Responder
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(BASE, "static")
@@ -67,6 +70,22 @@ def auth_log(msg):
 AUTH = Auth(CONFIG_PATH, log=auth_log)
 TLS = CONFIG.get("tls") or {}          # {"port": 8443, "cert": "certs/server.crt", "key": "certs/server.key"}
 COOKIE = "cabinet_session"
+
+# Sous-domaines : avec "domain": "pi-infirmerie.local", le panneau des infirmières est servi sur
+# admin.pi-infirmerie.local et les statistiques sur stats.pi-infirmerie.local (à la racine "/"),
+# l'écran public sur pi-infirmerie.local. "hosts" permet de choisir d'autres noms. Un accès par
+# l'adresse IP (ou un autre nom) garde les chemins /admin et /stats.
+# Noms par défaut : sous-domaines classiques (admin.<domaine>, stats.<domaine>) ; pour un nom
+# « .local » à un seul niveau (annoncé en mDNS, sans DNS), des noms eux aussi à un seul niveau,
+# car Windows ne résout en mDNS que ceux-là : <nom>-admin.local et <nom>-stats.local.
+DOMAIN = (CONFIG.get("domain") or "").lower().strip(".")
+HOSTS = {}
+if DOMAIN:
+    if DOMAIN.endswith(".local") and DOMAIN.count(".") == 1:
+        HOSTS = {"admin": f"{DOMAIN[:-6]}-admin.local", "stats": f"{DOMAIN[:-6]}-stats.local"}
+    else:
+        HOSTS = {"admin": f"admin.{DOMAIN}", "stats": f"stats.{DOMAIN}"}
+    HOSTS.update({k: str(v).lower() for k, v in (CONFIG.get("hosts") or {}).items() if k in HOSTS})
 
 lock = threading.Lock()
 subscribers = set()
@@ -134,7 +153,24 @@ def snapshot():
     return {"school": CONFIG.get("school", ""),
             "title": CONFIG.get("title", "Cabinet d'infirmières"),
             "logo": "/logo?v=%d" % int(os.path.getmtime(logo_path())),
+            "urls": site_urls(),
             "nurses": out}
+
+
+def site_url(host):
+    """Adresse complète d'un site : HTTPS sur le port TLS si le HTTPS est actif, sinon HTTP."""
+    if TLS_ACTIVE:
+        scheme, port = "https", int(TLS.get("port", 8443))
+    else:
+        scheme, port = "http", int(os.environ.get("PORT", CONFIG.get("port", 8080)))
+    return f"{scheme}://{host}{'' if (scheme, port) in (('https', 443), ('http', 80)) else ':%d' % port}/"
+
+
+def site_urls():
+    """Adresses des trois sites (vide si aucun sous-domaine n'est configuré)."""
+    if not DOMAIN:
+        return {}
+    return {"public": site_url(DOMAIN), "admin": site_url(HOSTS["admin"]), "stats": site_url(HOSTS["stats"])}
 
 
 def broadcast():
@@ -468,9 +504,33 @@ class Handler(BaseHTTPRequestHandler):
     def session(self):
         return AUTH.session(self.token())
 
+    def host_name(self):
+        return (self.headers.get("Host") or "").split(":")[0].lower()
+
+    def host_role(self):
+        """'public', 'admin' ou 'stats' si le nom utilisé est l'un des noms configurés, sinon None
+        (adresse IP, autre nom : les chemins /admin et /stats fonctionnent comme avant)."""
+        host = self.host_name()
+        if not DOMAIN:
+            return None
+        if host == DOMAIN:
+            return "public"
+        return next((role for role, name in HOSTS.items() if host == name), None)
+
     def cookie(self, value, max_age):
         attrs = f"{COOKIE}={value}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}"
+        host = self.host_name()
+        if DOMAIN and (host == DOMAIN or host.endswith("." + DOMAIN)):
+            attrs += f"; Domain={DOMAIN}"            # la même connexion sert pour admin.* et stats.*
         return attrs + ("; Secure" if self.is_tls else "")
+
+    def serve_page(self, page):
+        """Page 'admin' ou 'stats' : au bon nom d'hôte (sinon redirection), et en HTTPS."""
+        role = self.host_role()
+        if role is not None and role != page:
+            return self.send_bytes(302, b"", "text/plain", {"Location": site_url(HOSTS[page])})
+        if self.require_tls(page=True):
+            self.send_static(page + ".html")
 
     def same_origin(self):
         """Protection CSRF : une requête POST de navigateur porte un en-tête Origin."""
@@ -530,10 +590,22 @@ class Handler(BaseHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
         if path == "/":
-            self.send_static("index.html")
+            role = self.host_role()
+            if role in ("admin", "stats"):               # sous-domaine : le site est à la racine
+                self.serve_page(role)
+            else:
+                self.send_static("index.html")
         elif path in ("/admin", "/stats"):
-            if self.require_tls(page=True):
-                self.send_static(path[1:] + ".html")
+            self.serve_page(path[1:])
+        elif path == "/certificat":                      # aide à l'installation de l'autorité locale
+            self.send_static("certificat.html")
+        elif path == "/api/ca":
+            ca = os.path.join(BASE, "certs", "ca.crt")
+            if not os.path.isfile(ca):
+                return self.send_json(404, {"error": "introuvable"})
+            der = ssl.PEM_cert_to_DER_cert(open(ca, encoding="ascii").read())
+            fp = hashlib.sha256(der).hexdigest().upper()
+            self.send_json(200, {"fingerprint": ":".join(fp[i:i + 2] for i in range(0, len(fp), 2))})
         elif path == "/logo":
             self.send_path(logo_path())
         elif path == "/ca.crt":        # autorité de certification locale, à installer sur les appareils
@@ -662,6 +734,9 @@ def start_tls():
 
 
 if __name__ == "__main__":
+    if "--print-hosts" in sys.argv:       # utilisé par deploy/setup-https.sh : noms à mettre dans le certificat
+        print(" ".join(dict.fromkeys(([DOMAIN] if DOMAIN else []) + list(HOSTS.values()))))
+        sys.exit(0)
     init_db()
     load_state()
     startup_reconcile()
@@ -669,6 +744,14 @@ if __name__ == "__main__":
     for w in AUTH.warnings():
         print("[sécurité]", w, flush=True)
     start_tls()
+    # Noms « .local » des sous-domaines : annoncés sur le réseau local (mDNS), sans rien installer.
+    # Pour un vrai nom DNS donné par le service informatique, ils sont ignorés ("mdns": false).
+    mdns_names = [h for h in HOSTS.values() if h.endswith(".local")]
+    if mdns_names and CONFIG.get("mdns", True) and os.environ.get("CABINET_NO_MDNS") != "1":
+        # le nom de base est aussi annoncé par avahi ; on le double : plus rapide et plus fiable (le serveur
+        # n'écoute qu'en IPv4, donc répondre « pas d'adresse IPv6 » évite aux clients une attente inutile)
+        base = [DOMAIN] if DOMAIN.endswith(".local") and DOMAIN.count(".") == 1 else []
+        Responder(mdns_names + base, log=lambda m: print(m, flush=True)).start()
     if not TLS_ACTIVE:
         print("[sécurité] HTTPS inactif : les codes de connexion circuleraient en clair sur le réseau "
               "(voir deploy/setup-https.sh)", flush=True)

@@ -15,6 +15,9 @@ mkdir -p certs && chmod 700 certs && cd certs
 HOST="$(hostname)"
 SAN="DNS:$HOST,DNS:$HOST.local"
 for ip in $(hostname -I); do SAN="$SAN,IP:$ip"; done
+# noms de config.json ("domain" et les noms des sites admin / stats) : l'application les calcule
+CFG_NAMES="$(python3 "$APP/server.py" --print-hosts 2>/dev/null || true)"
+for name in $CFG_NAMES; do SAN="$SAN,DNS:$name"; done
 for name in "$@"; do SAN="$SAN,DNS:$name"; done
 
 if [ ! -f ca.key ]; then

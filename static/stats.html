@@ -242,11 +242,12 @@
       me = await Auth.login($("out"), { tab: "admin" });
       $("out").innerHTML = "";
     }
-    $("user").innerHTML = `${esc(me.name)} · <a href="#" id="logout">Se déconnecter</a>` +
-      (me.role === "nurse" ? ' · <a href="/admin">Mon panneau</a>' : "");
-    $("logout").onclick = e => { e.preventDefault(); Auth.logout(); };
     $("ctl").hidden = false; $("note").hidden = false;
     const d = await fetch("/api/state").then(r => r.json()).catch(() => null);
+    const adminUrl = (d && d.urls && d.urls.admin) || "/admin";           // sous-domaine du panneau si configuré
+    $("user").innerHTML = `${esc(me.name)} · <a href="#" id="logout">Se déconnecter</a>` +
+      (me.role === "nurse" ? ` · <a href="${esc(adminUrl)}">Mon panneau</a>` : "");
+    $("logout").onclick = e => { e.preventDefault(); Auth.logout(); };
     if (d) {
       $("school").textContent = `${d.school || ""} · ${d.title || ""}`;
       ORDER = d.nurses.map(n => n.id);

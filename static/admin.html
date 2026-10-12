@@ -121,13 +121,15 @@
     head.textContent = ""; head.append(data.school || "", document.createElement("br"), data.title || "");
     document.title = (data.title || "Cabinet") + " - Ma présence";
     const mine = data.nurses.find(n => n.id === me);
+    footer();
     app.innerHTML = mine ? nurseCard(mine) : '<div class="card">Votre compte n\'est associé à aucun cabinet.</div>';
   }
 
   function footer() {
+    const u = (data && data.urls) || {};            // sous-domaines : liens vers les autres sites
     document.getElementById("foot").innerHTML =
       `<div>Connectée : <b>${who.name}</b> · <button class="link" data-act="logout">Se déconnecter</button></div>
-       <div><a class="link" href="/" target="_blank">Voir l'écran d'affichage</a> · <a class="link" href="/stats">Mes statistiques</a></div>`;
+       <div><a class="link" href="${u.public || "/"}" target="_blank">Voir l'écran d'affichage</a> · <a class="link" href="${u.stats || "/stats"}">Mes statistiques</a></div>`;
   }
 
   document.addEventListener("input", e => {

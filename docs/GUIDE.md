@@ -248,6 +248,7 @@ Contenu type, à adapter :
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
+  "domain": "pi-infirmerie.local",
   "minEventSeconds": 10,
   "sessionHours": { "nurse": 12, "admin": 2 },
   "admins": [
@@ -268,6 +269,8 @@ Les codes d'accès ne s'écrivent **pas** dans ce fichier : ils se définissent 
 | `logo` | Chemin du logo, relatif au dossier de l'application (PNG, JPG ou SVG). Absent : logo par défaut |
 | `minEventSeconds` | Les changements d'état plus courts que cela (appui par erreur) sont ignorés dans les statistiques |
 | `port` | Port HTTP du serveur (8080 par défaut) : écran public et redirection vers HTTPS |
+| `domain` | Nom de l'écran public (par défaut `<nom-du-pi>.local`, annoncé automatiquement). Le panneau et les statistiques ont leur propre site : `<nom>-admin.local` et `<nom>-stats.local` ; avec un vrai nom DNS (`infirmerie.lycee.fr`) : `admin.…` et `stats.…` |
+| `hosts` | Facultatif : choisir d'autres noms, par exemple `{ "admin": "panneau.lycee.fr", "stats": "chiffres.lycee.fr" }` |
 | `tls` | Ajouté automatiquement par `deploy/setup-https.sh` : port HTTPS (8443 par défaut) et fichiers du certificat |
 | `sessionHours` | Durée de connexion sans activité, en heures, pour les infirmières (`nurse`, 12 par défaut) et l'administration (`admin`, 2 par défaut) |
 | `admins[]` | Comptes **administration** (accès aux statistiques de toutes les infirmières, en lecture seule) : `id` et `name` |
@@ -385,7 +388,7 @@ Le Pi est joignable par tout le réseau du lycée, **élèves compris**. Sans pr
    ```
 4. Installer l'**autorité de certification** `certs/ca.crt` sur les appareils (PC de l'administration, téléphones des infirmières), une seule fois par appareil, pour supprimer l'avertissement de sécurité du navigateur (marche à suivre dans [SECURITE.md](SECURITE.md)).
 
-✅ **Vérification** : `https://pi-infirmerie.local:8443/admin` affiche l'écran de connexion, sans avertissement du navigateur.
+✅ **Vérification** : `https://pi-infirmerie-admin.local:8443/` affiche l'écran de connexion, sans avertissement du navigateur.
 
 Tout le détail (blocage après des essais ratés, durée des sessions, journal des connexions, code oublié, pare-feu, renouvellement du certificat) est dans **[SECURITE.md](SECURITE.md)**.
 
@@ -434,13 +437,13 @@ Vous voyez alors l'écran du couloir en direct, avec la souris et le clavier.
 Sur le téléphone (connecté au réseau du lycée), ouvrir :
 
 ```
-https://pi-infirmerie.local:8443/admin
+https://pi-infirmerie-admin.local:8443/
 ```
-Le nom `pi-infirmerie.local` remplace l'adresse IP (il suit le Pi même si son IP change). Avec les **ports standards** (`sh deploy/use-standard-ports.sh`, voir [SECURITE.md](SECURITE.md)), l'adresse devient simplement `https://pi-infirmerie.local`.
+Le panneau des infirmières a **son propre site** (`pi-infirmerie-admin.local`), distinct des statistiques (`pi-infirmerie-stats.local`) et de l'écran public (`pi-infirmerie.local`). Ces noms remplacent l'adresse IP et suivent le Pi même si son IP change. Les anciens liens `…/admin` et `…/stats` redirigent vers le bon site. Avec les **ports standards** (`sh deploy/use-standard-ports.sh`, voir [SECURITE.md](SECURITE.md)), l'adresse devient simplement `https://pi-infirmerie.local`.
 
 Chaque infirmière enregistre la page en **favori** ou l'ajoute à l'**écran d'accueil** du téléphone, ou scanne un **QR code** collé près de l'écran : un seul geste ensuite. Cette adresse ouvre l'écran de connexion, jamais un panneau.
 
-> Un lien personnel présélectionne le nom : `https://pi-infirmerie.local:8443/admin?me=broux`. Le code reste obligatoire.
+> Un lien personnel présélectionne le nom : `https://pi-infirmerie-admin.local:8443/?me=broux`. Le code reste obligatoire.
 
 ### 9.2 Se connecter avec son code personnel
 
@@ -524,7 +527,7 @@ Ce geste alimente directement le nombre d'élèves reçus et la durée moyenne d
 Chaque changement d'état est enregistré dans un journal (base SQLite `data.db` sur le Pi, sans rien à installer). La page de statistiques le restitue, **après connexion** :
 
 ```
-https://pi-infirmerie.local:8443/stats
+https://pi-infirmerie-stats.local:8443/
 ```
 
 **Qui voit quoi**

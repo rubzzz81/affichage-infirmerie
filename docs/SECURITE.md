@@ -106,7 +106,7 @@ mais **vérifiez toujours son empreinte** avant de l'installer (commande plus ba
 
 | Appareil | Marche à suivre |
 |---|---|
-| **Windows** (PC de l'administration) | Copier `ca.crt` (par exemple depuis `http://pi-infirmerie.local:8080/ca.crt`), double-cliquer, *Installer le certificat…*, *Utilisateur actuel*, *Placer tous les certificats dans le magasin suivant* → **Autorités de certification racines de confiance**. Chrome et Edge l'utilisent. Pour **Firefox** : *Paramètres → Vie privée et sécurité → Certificats → Afficher les certificats → Autorités → Importer*. |
+| **Windows** (PC de l'administration) | Ouvrir la page d'aide `http://pi-infirmerie.local:8080/certificat` (téléchargement + empreinte), ou copier `ca.crt`, puis double-cliquer, *Installer le certificat…*, *Utilisateur actuel*, *Placer tous les certificats dans le magasin suivant* → **Autorités de certification racines de confiance**. Chrome et Edge l'utilisent. Pour **Firefox** : *Paramètres → Vie privée et sécurité → Certificats → Afficher les certificats → Autorités → Importer*. |
 | **Android** | Télécharger `ca.crt`, puis *Paramètres → Sécurité → Chiffrement et identifiants → Installer un certificat → Certificat d'autorité de certification*. |
 | **iPhone / iPad** | Télécharger `ca.crt`, l'installer dans *Réglages → Profil téléchargé*, puis activer la confiance dans *Réglages → Général → Informations → Réglages des certificats*. |
 | **Poste du lycée géré par le service informatique** | Le service informatique peut déployer `ca.crt` par stratégie de groupe (GPO), une seule fois pour tous les postes. |
@@ -132,16 +132,53 @@ systemctl --user restart cabinet.service
 ```
 L'autorité (`ca.crt`) est conservée : les appareils n'ont **rien** à refaire.
 
-## 3. Ne plus taper l'adresse IP
+## 3. Trois sites, trois adresses, sans taper l'IP
 
-| Moyen | Mise en place |
-|---|---|
-| **Le nom `pi-infirmerie.local`** | Déjà actif (service mDNS du Pi) : `https://pi-infirmerie.local:8443/admin`. Fonctionne sous Windows 10 ou plus, iPhone, Mac et la plupart des Android récents. |
-| **Sans le numéro de port** | Passer en ports standards (80 et 443) : `sh deploy/use-standard-ports.sh` (demande le mot de passe `sudo`). L'adresse devient simplement `https://pi-infirmerie.local`. Annulation : `--undo`. |
-| **Un nom de lycée** (`infirmerie.lycee-rascol.fr`) | Demander au service informatique un enregistrement DNS vers l'adresse du Pi, et ajouter ce nom au certificat (voir plus haut). |
-| **Favoris, QR code, icône d'écran d'accueil** | Chaque infirmière enregistre la page comme favori ou « Ajouter à l'écran d'accueil » : un seul geste ensuite. Un QR code collé près de l'écran évite toute saisie. |
+Chaque usage a **son propre site**, repérable par son nom. C'est plus simple à retenir et
+cela sépare ce que voient les élèves de ce qui est protégé :
 
-> La connexion reste personnelle : un QR code ou un favori ouvre la page de connexion, jamais un panneau.
+| Site | Adresse | Qui | Contenu |
+|---|---|---|---|
+| **Écran public** | `https://pi-infirmerie.local:8443/` | Tout le monde | L'écran d'affichage (présence uniquement) |
+| **Panneau des infirmières** | `https://pi-infirmerie-admin.local:8443/` | Infirmières (code personnel) | Le panneau de chacune |
+| **Statistiques** | `https://pi-infirmerie-stats.local:8443/` | Administration, et chaque infirmière pour ses chiffres | Tableau de bord, exports |
+
+- Les anciens liens (`…/admin`, `…/stats`, et l'accès par l'adresse IP) **continuent de fonctionner** : depuis l'écran public, ils redirigent vers le bon site.
+- Les noms `.local` sont **annoncés automatiquement par le Pi** sur le réseau (mDNS) : rien à demander au service informatique, rien à installer. Ils fonctionnent sous Windows 10 ou plus, iPhone, Mac et la plupart des Android récents. Si un appareil ne les trouve pas, utiliser l'adresse IP.
+- **Pourquoi `pi-infirmerie-admin.local` et pas `admin.pi-infirmerie.local` ?** Windows ne retrouve en mDNS que les noms à **un seul niveau** (`quelquechose.local`). Les vrais sous-domaines ne marchent qu'avec un serveur DNS (voir plus bas).
+- Le certificat HTTPS couvre automatiquement ces trois noms ; `sh deploy/setup-https.sh` le met à jour.
+
+### Avec un vrai nom DNS (recommandé si le service informatique le propose)
+
+Pour un nom de lycée comme `infirmerie.lycee-rascol.fr`, demander au service informatique **trois enregistrements** vers l'adresse du Pi (ou un seul enregistrement « joker » `*.infirmerie.lycee-rascol.fr`), puis dans `config.json` :
+```json
+"domain": "infirmerie.lycee-rascol.fr"
+```
+Le panneau est alors sur `admin.infirmerie.lycee-rascol.fr` et les statistiques sur `stats.infirmerie.lycee-rascol.fr`, avec de **vrais sous-domaines**. Ils partagent la connexion (une seule saisie du code pour le panneau et les statistiques d'une infirmière). Lancer ensuite :
+```bash
+sh deploy/setup-https.sh        # le certificat couvre les nouveaux noms
+systemctl --user restart cabinet.service
+```
+Pour choisir d'autres noms : `"hosts": { "admin": "panneau.lycee-rascol.fr", "stats": "chiffres.lycee-rascol.fr" }`.
+
+### Sans le numéro de port
+
+Passer en ports standards (80 et 443) : `sh deploy/use-standard-ports.sh` (demande le mot de passe `sudo`). Les adresses deviennent `https://pi-infirmerie-admin.local` etc. Annulation : `--undo`.
+
+### Enregistrer l'adresse sur le téléphone
+
+Chaque infirmière enregistre le panneau comme **favori** ou l'ajoute à l'**écran d'accueil** : un seul geste ensuite. Un **QR code** vers l'adresse du panneau, collé près de l'écran, évite toute saisie.
+
+> La connexion reste personnelle : un favori ou un QR code ouvre la page de connexion, jamais un panneau.
+
+### « Connexion non sécurisée » dans le navigateur ?
+
+Les pages protégées sont **toujours** servies en HTTPS. Un avertissement du navigateur signifie seulement que l'appareil ne connaît pas encore l'autorité de certification du lycée : il suffit de l'installer **une fois**. Une page d'aide guide cette étape, avec l'empreinte à vérifier :
+
+```
+http://pi-infirmerie.local:8080/certificat
+```
+(à partir de n'importe quel appareil ; elle s'ouvre aussi en HTTPS une fois l'avertissement accepté.)
 
 ## 4. Protection contre les essais de codes
 

@@ -31,7 +31,7 @@ cfg = {"school": "Test", "title": "T", "port": HP,
        "nurses": [{"id": "broux", "name": "Mme B", "hours": {"default": ["00:00", "23:59"]}},
                   {"id": "glinka", "name": "Mme G", "hours": {"default": ["00:00", "23:59"]}}],
        "admins": [{"id": "direction", "name": "Direction"}, {"id": "vide", "name": "Sans code"}],
-       "sessionHours": {"nurse": 0.002, "admin": 2}}
+       "sessionHours": {"nurse": 0.002, "admin": 2}, "domain": "pitest.example"}
 json.dump(cfg, open("config.json", "w"))
 subprocess.run(["sh", "deploy/setup-https.sh"], check=True, capture_output=True)
 cfg = json.load(open("config.json"))
@@ -148,6 +148,49 @@ try:
     r4 = c.getresponse(); r4.read()
     check("connexion persistante : après un POST refusé (Origin étrangère) -> 200", r3.status == 403 and r4.status == 200, f"{r3.status}/{r4.status}")
     c.close()
+    # --- 2c. Sous-domaines : admin.* / stats.* / domaine principal
+    AH, SH, PH = f"admin.pitest.example:{TP}", f"stats.pitest.example:{TP}", f"pitest.example:{TP}"
+    AU, SU = f"https://admin.pitest.example:{TP}/", f"https://stats.pitest.example:{TP}/"
+    s, h, j, t = req("GET", "/", headers={"Host": AH})
+    check("admin.* : la racine sert le panneau des infirmières", s == 200 and "Ma présence" in t, str(s))
+    s, h, j, t = req("GET", "/", headers={"Host": SH})
+    check("stats.* : la racine sert les statistiques", s == 200 and "<title>Statistiques" in t, str(s))
+    s, h, j, t = req("GET", "/", headers={"Host": PH})
+    check("domaine principal : la racine sert l'écran public", s == 200 and "<title>Cabinet d'infirmières</title>" in t, str(s))
+    s, h, j, t = req("GET", "/admin", headers={"Host": PH})
+    check("domaine principal /admin -> redirige vers admin.*", s == 302 and h.get("location") == AU, f"{s} {h.get('location')}")
+    s, h, j, t = req("GET", "/stats", headers={"Host": PH})
+    check("domaine principal /stats -> redirige vers stats.*", s == 302 and h.get("location") == SU, f"{s} {h.get('location')}")
+    s, h, j, t = req("GET", "/stats", headers={"Host": AH})
+    check("admin.* /stats -> redirige vers stats.*", s == 302 and h.get("location") == SU)
+    s, h, j, t = req("GET", "/admin", headers={"Host": SH})
+    check("stats.* /admin -> redirige vers admin.*", s == 302 and h.get("location") == AU)
+    s, h, j, t = req("GET", "/admin")
+    check("accès par adresse IP : /admin fonctionne toujours (compatibilité)", s == 200 and "Ma présence" in t, str(s))
+    s, h, j, t = req("GET", "/", headers={"Host": f"admin.pitest.example:{HP}"}, tls=False)
+    check("HTTP sur admin.* -> redirige vers HTTPS (même nom)", s == 302 and h.get("location") == AU, f"{s} {h.get('location')}")
+    s, h, j, t = req("GET", "/api/state", tls=False)
+    check("/api/state : adresses des trois sites", j.get("urls", {}).get("admin") == AU and j["urls"]["stats"] == SU and j["urls"]["public"] == f"https://pitest.example:{TP}/", str(j.get("urls")))
+    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"], headers={"Host": AH})
+    check("connexion sur admin.* : cookie partagé (Domain=pitest.example)", s == 200 and "Domain=pitest.example" in h.get("set-cookie", ""), h.get("set-cookie", "")[:120])
+    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"], headers={"Host": AH, "Origin": SU.rstrip("/")})
+    check("connexion avec l'origine d'un AUTRE sous-domaine -> 403", s == 403, str(s))
+    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"], headers={"Host": AH, "Origin": AU.rstrip("/")})
+    check("connexion avec l'origine du même site -> 200", s == 200, str(s))
+    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"])
+    check("connexion par adresse IP : pas d'attribut Domain (cookie lié à l'hôte)", s == 200 and "Domain=" not in h.get("set-cookie", ""))
+    s, h, j, t = req("GET", "/certificat", tls=False)
+    check("/certificat (aide à l'installation) accessible sans compte", s == 200 and "certificat" in t.lower())
+    s, h, j, t = req("GET", "/api/ca", tls=False)
+    check("/api/ca : empreinte SHA-256 de l'autorité", s == 200 and re.fullmatch(r"([0-9A-F]{2}:){31}[0-9A-F]{2}", j.get("fingerprint", "")) is not None)
+    # --- 2d. Noms par défaut d'un domaine « .local » (annoncés en mDNS, à un seul niveau)
+    keep = open("config.json").read()
+    c2 = json.loads(keep); c2["domain"] = "pi-test.local"; c2.pop("hosts", None)
+    open("config.json", "w").write(json.dumps(c2))
+    names = subprocess.run([sys.executable, "server.py", "--print-hosts"], capture_output=True, text=True).stdout.split()
+    open("config.json", "w").write(keep)
+    check("domaine .local : noms à un seul niveau (résolus par Windows en mDNS)", names == ["pi-test.local", "pi-test-admin.local", "pi-test-stats.local"], str(names))
+
     # --- 3. Droits d'une infirmière
     s, h, j, t = req("POST", "/api/set", {"id": "broux", "status": "present"}, cookie=NB)
     check("infirmière : modifie SON panneau -> 200", s == 200, f"{s} {t[:80]}")

@@ -3,6 +3,7 @@
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
+  "domain": "pi-infirmerie.local",
   "minEventSeconds": 10,
   "sessionHours": { "nurse": 12, "admin": 2 },
   "admins": [
