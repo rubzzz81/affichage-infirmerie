@@ -38,7 +38,7 @@ une ou plusieurs entrées dans `admins` (par exemple la direction, la vie scolai
     { "id": "administration", "name": "Administration" }
   ],
   "nurses": [
-    { "id": "broux", "name": "Mme Broux", "hours": { "default": ["08:00", "18:00"] } }
+    { "id": "dupont", "name": "Mme Dupont", "hours": { "default": ["08:00", "18:00"] } }
   ],
   "sessionHours": { "nurse": 12, "admin": 2 }
 }
@@ -54,7 +54,7 @@ jamais après coup et ne les enregistre pas en clair.
 | Besoin | Commande |
 |---|---|
 | Voir quels comptes ont un code (sans l'afficher) | `python3 deploy/pins.py list` |
-| Choisir soi-même le code d'un compte | `python3 deploy/pins.py set nurse:broux` puis saisie masquée |
+| Choisir soi-même le code d'un compte | `python3 deploy/pins.py set nurse:dupont` puis saisie masquée |
 | Code de l'administration | `python3 deploy/pins.py set admin:administration` |
 | Générer un code aléatoire de 6 chiffres pour chaque compte sans code | `python3 deploy/pins.py generate` |
 | Remplacer tous les codes | `python3 deploy/pins.py generate --all` |
@@ -96,7 +96,7 @@ systemctl --user restart cabinet.service
 Le script crée une **petite autorité de certification privée** du lycée (`certs/ca.crt`) et
 un **certificat** du Pi signé par elle, valable pour `pi-infirmerie`, `pi-infirmerie.local` et
 l'adresse IP du Pi. Pour ajouter un nom donné par le service informatique :
-`sh deploy/setup-https.sh infirmerie.lycee-rascol.fr`.
+`sh deploy/setup-https.sh infirmerie.lycee-exemple.fr`.
 
 Le serveur écoute alors en HTTPS sur le port **8443** (réglable : `tls.port` dans `config.json`).
 
@@ -152,16 +152,16 @@ cela sépare ce que voient les élèves de ce qui est protégé :
 
 ### Avec un vrai nom DNS (recommandé si le service informatique le propose)
 
-Pour un nom de lycée comme `infirmerie.lycee-rascol.fr`, demander au service informatique **trois enregistrements** vers l'adresse du Pi (ou un seul enregistrement « joker » `*.infirmerie.lycee-rascol.fr`), puis dans `config.json` :
+Pour un nom de lycée comme `infirmerie.lycee-exemple.fr`, demander au service informatique **trois enregistrements** vers l'adresse du Pi (ou un seul enregistrement « joker » `*.infirmerie.lycee-exemple.fr`), puis dans `config.json` :
 ```json
-"domain": "infirmerie.lycee-rascol.fr"
+"domain": "infirmerie.lycee-exemple.fr"
 ```
-Le panneau est alors sur `admin.infirmerie.lycee-rascol.fr` et les statistiques sur `stats.infirmerie.lycee-rascol.fr`, avec de **vrais sous-domaines**. Ils partagent la connexion (une seule saisie du code pour le panneau et les statistiques d'une infirmière). Lancer ensuite :
+Le panneau est alors sur `admin.infirmerie.lycee-exemple.fr` et les statistiques sur `stats.infirmerie.lycee-exemple.fr`, avec de **vrais sous-domaines**. Ils partagent la connexion (une seule saisie du code pour le panneau et les statistiques d'une infirmière). Lancer ensuite :
 ```bash
 sh deploy/setup-https.sh        # le certificat couvre les nouveaux noms
 systemctl --user restart cabinet.service
 ```
-Pour choisir d'autres noms : `"hosts": { "admin": "panneau.lycee-rascol.fr", "stats": "chiffres.lycee-rascol.fr" }`.
+Pour choisir d'autres noms : `"hosts": { "admin": "panneau.lycee-exemple.fr", "stats": "chiffres.lycee-exemple.fr" }`.
 
 ### Sans le numéro de port
 
@@ -219,8 +219,8 @@ Chaque connexion, chaque échec et chaque blocage sont inscrits dans `~/cabinet/
 (lisible par le seul compte du Pi, 1 Mo puis rotation). Jamais un code n'y figure.
 
 ```
-2026-10-12 15:47:28 [auth] échec de connexion nurse:broux depuis 127.0.0.1
-2026-10-12 15:48:02 [auth] connexion nurse:broux depuis 10.5.35.57
+2026-10-12 15:47:28 [auth] échec de connexion nurse:dupont depuis 127.0.0.1
+2026-10-12 15:48:02 [auth] connexion nurse:dupont depuis 10.0.0.57
 2026-10-12 15:50:10 [auth] adresse 10.5.40.12 bloquée 300 s (échecs répétés)
 ```
 ```bash
@@ -262,11 +262,11 @@ sudo apt install ufw
 sudo ufw default deny incoming
 sudo ufw allow 8080/tcp          # écran public (ou 80)
 sudo ufw allow 8443/tcp          # panneaux et statistiques (ou 443)
-sudo ufw allow from 10.5.35.10 to any port 22 proto tcp      # SSH : le PC de l'informatique
-sudo ufw allow from 10.5.35.10 to any port 5900 proto tcp    # VNC : le même PC
+sudo ufw allow from 10.0.0.10 to any port 22 proto tcp      # SSH : le PC de l'informatique
+sudo ufw allow from 10.0.0.10 to any port 5900 proto tcp    # VNC : le même PC
 sudo ufw enable
 ```
-Remplacez `10.5.35.10` par l'adresse du PC d'administration. **Attention** : si vous vous
+Remplacez `10.0.0.10` par l'adresse du PC d'administration. **Attention** : si vous vous
 trompez d'adresse pour SSH, vous ne pourrez plus vous connecter à distance ; gardez un clavier et un écran pour réparer.
 
 Le service informatique peut aussi filtrer ces ports sur le réseau (VLAN, ACL du switch), ce qui évite d'installer un pare-feu sur chaque Pi.

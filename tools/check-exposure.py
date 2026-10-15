@@ -4,7 +4,7 @@ lycée (téléphone en 4G avec Termux, PC à la maison, serveur loué...). Pytho
 
     python3 check-exposure.py <adresse-ou-nom> [port-HTTPS]
 
-    python3 check-exposure.py 45.15.220.130 8443
+    python3 check-exposure.py 203.0.113.10 8443
     python3 check-exposure.py infirmerie.lycee.fr 443 --verifie-certificat
 
 Ce que le script contrôle :

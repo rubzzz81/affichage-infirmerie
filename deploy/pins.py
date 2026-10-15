@@ -2,14 +2,14 @@
 """Gestion des codes d'accès (infirmières et administration). À lancer sur le Pi :
 
   python3 deploy/pins.py list                       comptes et état des codes (jamais les codes)
-  python3 deploy/pins.py set nurse:broux            définir / changer un code (saisie masquée)
+  python3 deploy/pins.py set nurse:dupont            définir / changer un code (saisie masquée)
   python3 deploy/pins.py set admin:direction
   python3 deploy/pins.py generate                   codes aléatoires pour les comptes sans code
   python3 deploy/pins.py generate --all             ... pour tous les comptes (remplace les codes)
   python3 deploy/pins.py add-admin direction "Direction"   créer un compte administration
   python3 deploy/pins.py remove-admin direction
-  python3 deploy/pins.py totp nurse:broux           activer le second facteur (application d'authentification)
-  python3 deploy/pins.py totp-remove nurse:broux    le retirer
+  python3 deploy/pins.py totp nurse:dupont           activer le second facteur (application d'authentification)
+  python3 deploy/pins.py totp-remove nurse:dupont    le retirer
 
 Les codes sont stockés hachés (scrypt) dans config.json, jamais en clair. Le serveur prend
 les changements en compte immédiatement (sans redémarrage) et ferme les sessions ouvertes

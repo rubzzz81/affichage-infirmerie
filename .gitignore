@@ -8,3 +8,6 @@ certs/
 __pycache__/
 branding/*
 !branding/README.md
+
+# Notes propres à une installation (adresses, noms) : jamais publiées
+docs/LOCAL-*

@@ -1,21 +1,45 @@
-# Affichage de présence des infirmeries - Lycée Louis Rascol
+# Affichage de présence des infirmeries
 
-Un grand écran dans le couloir indique en temps réel si chaque infirmière est
-présente dans son cabinet, avec ses horaires du jour. Chaque infirmière change
-son état en deux touches depuis son téléphone ou son PC.
+Un grand écran dans le couloir indique en temps réel si chaque infirmière est présente dans son
+cabinet, avec ses horaires du jour. Chaque infirmière change son état en deux touches depuis son
+téléphone ou son PC. L'administration consulte les statistiques d'activité.
 
 - **Libre et gratuit** (licence MIT), **aucune dépendance** : Python 3 standard uniquement.
-- Fonctionne hors Internet, sur le réseau local du lycée.
-- Conçu pour un Raspberry Pi derrière l'écran, branché en HDMI, avec Chromium en mode kiosque.
-- **Statistiques d'activité** : élèves reçus, durée moyenne des consultations, taux d'occupation du cabinet, usage de chaque état ; graphiques, export CSV et PDF.
-- **Réutilisable par n'importe quel établissement** : nom, titre, logo et infirmières se règlent dans `config.json`.
-
-**Nouveau sur le projet ? Suivez le [guide pas à pas](docs/GUIDE.md)** : carte SD, réseau, SSH, installation, kiosque, mise en service.
-**Autre établissement ? Voir [Adapter la solution](docs/ADAPTER.md).**
+- **Se met en place en une trentaine de minutes**, sur le réseau local, **sans Internet, sans nom de domaine, sans certificat**.
+- Conçu pour un Raspberry Pi derrière l'écran (HDMI), Chromium en mode kiosque.
+- **Statistiques d'activité** : élèves reçus, durée moyenne des consultations, taux d'occupation, graphiques, export CSV et PDF.
+- **Réutilisable par n'importe quel établissement** : nom, titre, logo, infirmières et horaires se règlent dans `config.json` (ou avec l'assistant d'installation).
+- **Sécurisé par défaut** : un code personnel par compte, droits vérifiés par le serveur ; l'accès depuis Internet est une option, jamais nécessaire.
 
 ![Écran d'affichage](docs/img/affichage-2-consultation-pause.png)
 
 <img src="docs/img/admin-3-absence-temporaire.png" alt="Page de commande sur téléphone" width="320">
+
+## Installer en 4 commandes
+
+Sur un Raspberry Pi OS (avec bureau) relié au réseau, en SSH ou au clavier :
+
+```bash
+git clone <adresse-du-dépôt> cabinet && cd cabinet
+sh deploy/install.sh        # assistant : établissement, infirmières, horaires, codes personnels
+sudo reboot                 # l'écran du couloir démarre tout seul
+```
+
+L'installation pose quelques questions, génère un **code personnel** pour chaque compte (affiché une
+seule fois), installe le serveur et l'écran, puis affiche les adresses à utiliser. **Pas de `sudo`**
+(sauf le redémarrage), **pas de configuration réseau particulière**.
+
+Guide complet, avec le matériel et les captures : **[Installation rapide](docs/INSTALLATION-RAPIDE.md)**.
+
+## Où trouver quoi
+
+| Je veux… | Document |
+|---|---|
+| Installer vite, sur le réseau local | **[docs/INSTALLATION-RAPIDE.md](docs/INSTALLATION-RAPIDE.md)** |
+| Tout faire pas à pas (carte SD, SSH, kiosque…), avec captures et dépannage | [docs/GUIDE.md](docs/GUIDE.md) |
+| Adapter à mon établissement, déployer dans plusieurs, faire une démonstration | [docs/ADAPTER.md](docs/ADAPTER.md) |
+| Comprendre les droits, le HTTPS local, les noms (`.local`), les codes perdus | [docs/SECURITE.md](docs/SECURITE.md) |
+| *(Option)* Ouvrir l'accès depuis Internet | [docs/INTERNET.md](docs/INTERNET.md) |
 
 ## États
 
@@ -26,108 +50,40 @@ son état en deux touches depuis son téléphone ou son PC.
 | Absente temporairement | orange | ABSENTE TEMPORAIREMENT, avec « Retour vers 14h30 » (facultatif) |
 | Absente (toute la journée) | rouge | ABSENTE |
 
-**À l'heure de fin de ses horaires, l'infirmière repasse automatiquement en « Absente »** (une seule fois : si elle se remet « Présente » après son heure de fin, son choix est respecté ; si elle allonge ses horaires, la fermeture est réarmée). Chaque nuit (changement de date), tout le monde repasse aussi en « Absente » avec les
-horaires par défaut, pour éviter un « Présente » oublié.
-
-## Architecture
-
-```
-Téléphone / PC infirmière ──► /admin ──POST /api/set──┐
-                                                       ▼
-                                     server.py (Python)
-                                       ├─ état courant : state.json
-                                       ├─ journal des changements : data.db (SQLite)
-                                       │        └──► /stats  (tableau de bord, CSV, PDF)
-                                       │ Server-Sent Events (/api/events)
-                                       ▼
-        Chromium kiosque sur le Pi (HDMI) ◄── /  (page d'affichage)
-```
-
-| Fichier | Rôle |
-|---|---|
-| `server.py` | Serveur HTTP + temps réel (SSE), validation, journal d'activité, statistiques |
-| `config.json` | Établissement, infirmières, administration, horaires, codes hachés (à créer ; non versionné, droits 600) |
-| `auth.py` | Comptes, codes hachés, sessions, limitation des essais |
-| `deploy/pins.py`, `deploy/setup-https.sh`, `deploy/use-standard-ports.sh` | Codes d'accès ; HTTPS ; ports 80/443 |
-| `config.example.json` | Modèle de configuration |
-| `branding/` | Logo de l'établissement (non versionné) |
-| `static/index.html` | Page d'affichage de l'écran (s'adapte à toute taille d'écran et à 1 à 4 infirmières) |
-| `static/admin.html` | Page de commande des infirmières (optimisée mobile) |
-| `static/stats.html` | Tableau de bord des statistiques |
-| `static/common.js` | Statuts, couleurs et fonctions partagées |
-| `static/logo-default.svg` | Logo affiché tant qu'aucun logo n'est fourni |
-| `deploy/install.sh` | Installation sur le Pi : service systemd + kiosque |
-| `data.db`, `state.json` | Données d'activité et état courant (créés automatiquement ; non versionnés) |
-
-## Installation sur le Raspberry Pi
-
-Prérequis : Raspberry Pi OS (bureau, avec Chromium), connecté au réseau, avec
-l'accès SSH. Testé sur Raspberry Pi OS basé sur Debian 13 (trixie), Python 3.13.
-Aucun `sudo` n'est nécessaire pour l'application.
-
-1. Copier le dossier sur le Pi, par exemple dans `~/cabinet` :
-   ```bash
-   scp -r cabinet infirmerie@<IP_DU_PI>:/home/infirmerie/
-   ```
-2. Créer la configuration :
-   ```bash
-   cd ~/cabinet && cp config.example.json config.json
-   nano config.json
-   ```
-3. Installer le démarrage automatique :
-   ```bash
-   sh deploy/install.sh
-   ```
-4. Redémarrer le Pi : `sudo reboot`. Le serveur démarre, puis Chromium s'ouvre en plein écran.
-
-`install.sh` crée :
-- `~/.config/systemd/user/cabinet.service` : le serveur, relancé automatiquement s'il plante ;
-- `~/.config/labwc/autostart` : lance `deploy/kiosk.sh` (Chromium en plein écran, relancé s'il se ferme).
-  Attention : ce fichier remplace l'autostart par défaut de labwc, donc il n'y a ni barre des tâches ni bureau. C'est voulu pour un kiosque.
-
-### Régler l'écran
-
-- **Veille / extinction de l'écran** : `sudo raspi-config` → *Display Options* → *Screen Blanking* → désactiver.
-- **Adresse IP fixe** : demander une réservation DHCP pour le Pi au service informatique, pour que l'adresse ne change pas.
-- **Accès à distance (VNC)** : `sh deploy/setup-vnc.sh` active le bureau à distance (chiffré, avec mot de passe) sur le port 5900 (adresse à saisir dans le client : `<IP>` seule), pour dépanner depuis un autre PC. Voir la section 8.4 du [guide](docs/GUIDE.md).
+**À l'heure de fin de ses horaires, l'infirmière repasse automatiquement en « Absente »** (une seule
+fois : si elle se remet « Présente » après son heure de fin, son choix est respecté ; si elle allonge
+ses horaires, la fermeture est réarmée). Chaque nuit, tout le monde repasse aussi en « Absente » avec
+les horaires par défaut, pour éviter un « Présente » oublié. Un **numéro de poste** facultatif peut
+s'afficher sous chaque nom.
 
 ## Utilisation par les infirmières
 
-Ouvrir `https://pi-infirmerie-admin.local:8443/` sur le téléphone ou le PC (même réseau que le Pi) : ce **nom** remplace l'adresse IP, et le panneau a **son propre site**, séparé des statistiques (`pi-infirmerie-stats.local`) et de l'écran public (`pi-infirmerie.local`).
+Ouvrir `http://<adresse-du-Pi>:8080/admin` sur le téléphone ou le PC (même réseau que le Pi) :
 
-1. Toucher **son nom** puis saisir **son code personnel** ; l'infirmière ne voit que **son** panneau.
+1. Toucher **son nom** puis saisir **son code personnel** : l'infirmière ne voit que **son** panneau.
 2. Toucher un des 4 boutons pour changer d'état. L'écran se met à jour en moins d'une seconde.
 3. Pour une absence temporaire : choisir facultativement un retour dans 15 min, 30 min, 1 h, ou une heure précise.
-4. Pour modifier les horaires du jour : déplier « Horaires d'aujourd'hui », puis *Enregistrer*.
-   « Rétablir les horaires habituels » annule la modification.
+4. Pour modifier les horaires du jour : déplier « Horaires d'aujourd'hui », puis *Enregistrer* (« Rétablir les horaires habituels » annule).
 5. **Se déconnecter** en bas de page sur un appareil partagé.
 
-Liens personnels : `https://pi-infirmerie-admin.local:8443/?me=<id>` présélectionne le nom (le code reste obligatoire), pratique pour un QR code ou un favori.
-
-Astuce : ajouter la page à l'écran d'accueil du téléphone (« Ajouter à l'écran d'accueil »). Avec `sh deploy/use-standard-ports.sh` (demande `sudo`), l'adresse devient simplement `https://pi-infirmerie.local`.
+Astuce : « Ajouter à l'écran d'accueil » du téléphone. Un lien `…/admin?me=<identifiant>` présélectionne le nom (le code reste obligatoire).
 
 ## Sécurité
 
-Le Pi est joignable par tout le réseau du lycée, élèves compris. Les accès sont donc protégés :
-
 | Qui | Accès |
 |---|---|
-| Tout le monde | L'écran d'affichage (présence uniquement, comme l'écran du couloir) |
+| Écran du couloir (réseau interne) | Lecture de la présence, **aucune modification** |
 | **Infirmière** | **Son** panneau et **ses** statistiques, avec **son code personnel** |
 | **Administration** | Les statistiques de **toutes** les infirmières, en **lecture seule**, avec son code |
 
-Codes **hachés** (scrypt), **HTTPS** obligatoire pour les pages protégées, **blocage** après des essais ratés, sessions limitées, **journal** des connexions, protection contre les requêtes forgées (CSRF). **Rien n'est ouvert tant qu'un compte n'a pas de code.**
-
-```bash
-sh deploy/setup-https.sh                  # chiffrement (autorité locale + certificat)
-python3 deploy/pins.py generate           # un code pour chaque compte (affichés une fois)
-systemctl --user restart cabinet.service
-```
-Détail, installation du certificat sur les appareils, pare-feu, codes oubliés : **[docs/SECURITE.md](docs/SECURITE.md)**.
-
-**Accès depuis Internet** (un seul port HTTPS, second facteur obligatoire, rien de lisible sans connexion, limites de connexions, vrai certificat, règles de pare-feu) : **[docs/INTERNET.md](docs/INTERNET.md)**. Un vérificateur à lancer depuis l'extérieur : `python3 tools/check-exposure.py <adresse> <port>`.
+Codes **hachés** (scrypt), **blocage** après des essais ratés, sessions limitées, **journal** des
+connexions, protection contre les requêtes forgées (CSRF). **Aucun compte sans code ne peut se connecter.**
+Facultatif : **HTTPS** local (`sh deploy/setup-https.sh`), noms faciles à retenir, second facteur,
+accès depuis Internet : voir [docs/SECURITE.md](docs/SECURITE.md) et [docs/INTERNET.md](docs/INTERNET.md).
 
 ## Configuration (`config.json`)
+
+Créé par l'assistant (`deploy/setup.py`) ; exemple dans `config.example.json` :
 
 ```json
 {
@@ -135,26 +91,24 @@ Détail, installation du certificat sur les appareils, pare-feu, codes oubliés 
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
-  "domain": "pi-infirmerie.local",
   "minEventSeconds": 10,
-  "sessionHours": { "nurse": 12, "admin": 2 },
-  "admins": [
-    { "id": "administration", "name": "Administration" }
-  ],
+  "admins": [ { "id": "administration", "name": "Administration" } ],
   "nurses": [
-    { "id": "dupont", "name": "Mme Dupont",
+    { "id": "dupont", "name": "Mme Dupont", "phone": "1001",
       "hours": { "default": ["08:00", "18:00"], "wed": ["08:00", "12:00"] } }
   ]
 }
 ```
 
-- `school` : nom de l'établissement. `title` : titre affiché au centre de l'écran. `logo` : chemin du logo (PNG, JPG ou SVG) ; sans fichier, un logo par défaut s'affiche.
-- `minEventSeconds` : les changements d'état plus courts (appui par erreur) sont ignorés dans les statistiques.
-- `nurses` : une entrée par infirmière, une colonne par entrée sur l'écran. `id` : identifiant court sans espace, **à ne pas changer en cours d'année** (les statistiques y sont rattachées).
-- `hours.default` : horaires habituels ; une clé `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun` remplace les horaires pour ce jour.
-- `admins` : comptes **administration** (statistiques de toutes, lecture seule). `sessionHours` : durée de connexion sans activité (infirmières 12 h, administration 2 h par défaut).
-- **Les codes ne s'écrivent pas dans ce fichier** : ils se définissent avec `python3 deploy/pins.py` (stockés hachés). Un bloc `tls` est ajouté par `deploy/setup-https.sh`.
-- Après modification : `systemctl --user restart cabinet.service`.
+- `school` : établissement. `title` : titre au centre de l'écran. `logo` : PNG, JPG ou SVG (sans fichier, un logo par défaut s'affiche).
+- `nurses` : une entrée par infirmière, une colonne par entrée sur l'écran (1 à 4 conseillé). `id` : identifiant court **à ne pas changer en cours d'année** (les statistiques y sont rattachées). `phone` : numéro de poste affiché (facultatif).
+- `hours.default` : horaires habituels ; une clé `mon`, `tue`, `wed`, `thu`, `fri`, `sat`, `sun` remplace les horaires de ce jour.
+- `minEventSeconds` : les changements d'état plus courts (appui par erreur) sont ignorés des statistiques.
+- **Les codes ne s'écrivent pas dans ce fichier** : `python3 deploy/pins.py` les stocke hachés.
+- Toutes les options (HTTPS, noms, Internet, limites) : [docs/ADAPTER.md](docs/ADAPTER.md) et [docs/INTERNET.md](docs/INTERNET.md).
+- `config.json`, `data.db`, `state.json`, `certs/` et `branding/` ne sont **jamais versionnés** (voir `.gitignore`).
+
+Après modification : `systemctl --user restart cabinet.service`.
 
 ## Exploitation et dépannage
 
@@ -163,44 +117,50 @@ systemctl --user status cabinet.service     # état du serveur
 journalctl --user -u cabinet.service -f     # journaux
 systemctl --user restart cabinet.service    # redémarrer le serveur
 curl localhost:8080/api/state               # état courant (JSON)
+python3 deploy/pins.py list                 # comptes et état des codes
 ```
 
 | Problème | Piste |
 |---|---|
-| Écran noir ou vide au démarrage | Vérifier le service (ci-dessus), puis lancer `~/cabinet/deploy/kiosk.sh` depuis une session du bureau |
-| Pastille orange en bas à droite de l'écran | La connexion au serveur est perdue ; la page se recharge toute seule au retour |
-| `/admin` injoignable depuis le téléphone | Le téléphone doit être sur le même réseau que le Pi (pas en 4G) ; vérifier le VLAN / Wi-Fi invité |
-| Les changements n'apparaissent pas | Recharger la page ; vérifier `curl localhost:8080/api/state` sur le Pi |
-| Code demandé en boucle | Le code saisi est faux ; recharger la page et ressaisir |
+| Écran noir ou vide au démarrage | Vérifier le service (ci-dessus), puis lancer `~/cabinet/deploy/kiosk.sh` depuis le bureau |
+| Pastille orange en bas à droite | Connexion au serveur perdue ; la page se recharge au retour |
+| `/admin` injoignable depuis le téléphone | Pas sur le même réseau que le Pi (pas en 4G, pas Wi-Fi invité) |
+| « Code incorrect » | `python3 deploy/pins.py set nurse:<identifiant>` |
 
-L'état courant est dans `state.json` (non versionné). Pour tout remettre à zéro : supprimer ce fichier puis redémarrer le service.
+Pour tout remettre à zéro : supprimer `state.json` puis redémarrer le service.
+
+## Organisation du dépôt
+
+| Chemin | Rôle |
+|---|---|
+| `server.py`, `auth.py`, `mdns.py` | Serveur HTTP/HTTPS + temps réel (SSE), comptes et sessions, noms `.local` |
+| `static/` | Pages : écran (`index.html`), panneau (`admin.html`), statistiques (`stats.html`) |
+| `deploy/` | `install.sh`, `setup.py` (assistant), `pins.py` (codes), `setup-https.sh`, `install-cert.sh`, `set-static-ip.sh`, `setup-vnc.sh`, `use-standard-ports.sh` |
+| `tools/` | `check-exposure.py` (contrôle externe), `demo-data.py` (fausses statistiques de démonstration) |
+| `tests/` | Suites de tests (sécurité, Internet, changement d'IP) : `python3 tests/test_security.py` |
+| `docs/` | Documentation |
 
 ## API
 
 | Route | Description |
 |---|---|
-| `GET /` | Page d'affichage |
-| `GET /admin` | Page de commande (HTTPS ; écran de connexion si pas de session) |
-| `GET /api/state` | État courant (JSON), **public** |
-| `GET /api/events` | Flux temps réel (Server-Sent Events), **public** |
-| `GET /logo`, `GET /ca.crt` | Logo de l'établissement ; autorité de certification locale |
+| `GET /` | Page d'affichage (réseau interne) |
+| `GET /admin`, `GET /stats` | Panneau et statistiques (écran de connexion si pas de session) |
+| `GET /api/state`, `GET /api/events` | État courant et flux temps réel (SSE) : réseau interne, ou session |
 | `GET /api/accounts` | Noms des comptes pour l'écran de connexion (jamais de code) |
-| `POST /api/login` | `{"role":"nurse"\|"admin","id":"…","pin":"…"}` → cookie de session (HTTPS uniquement) |
+| `POST /api/login` | `{"role":"nurse"\|"admin","id":"…","pin":"…"}` → cookie de session |
 | `POST /api/logout`, `GET /api/me` | Fermer la session ; compte connecté |
-| `POST /api/set` | **Infirmière connectée**, pour son panneau : `{"status":"pause","back":"14:30"}` ; ou `{"start","end"}` pour les horaires ; ou `{"resetHours":true}` |
-| `GET /stats` | Tableau de bord (connexion requise) ; `/stats?nurse=<id>` s'ouvre sur une infirmière |
-| `GET /api/stats?from=AAAA-MM-JJ&to=AAAA-MM-JJ[&nurse=<id>]` | Statistiques (JSON) : administration = toutes, infirmière = les siennes |
-| `GET /api/stats.csv`, `GET /api/events.csv` (mêmes paramètres) | Exports CSV, mêmes droits |
+| `POST /api/set` | Infirmière connectée, pour son panneau : `{"status":"pause","back":"14:30"}`, `{"start","end"}` ou `{"resetHours":true}` |
+| `GET /api/stats?from=…&to=…[&nurse=<id>]`, `/api/stats.csv`, `/api/events.csv` | Statistiques : administration = toutes, infirmière = les siennes |
 
-`status` : `present`, `consult`, `pause`, `absent`. `back` n'est accepté que pour `pause`. Les heures sont au format `HH:MM`. `"next": true` avec `"status":"consult"` ouvre une nouvelle consultation (élève suivant). Les routes protégées répondent **401** sans session, **403** si le compte n'a pas le droit (ou si l'accès se fait en HTTP), **429** pendant un blocage. Le serveur n'accepte aucun code dans une requête autre que la connexion.
+`status` : `present`, `consult`, `pause`, `absent` ; `back` seulement pour `pause` ; heures au format `HH:MM` ; `"next": true` avec `"status":"consult"` ouvre une nouvelle consultation. Routes protégées : **401** sans session, **403** sans droit, **429** pendant un blocage.
 
 ## Limites connues
 
-- Conçu pour un **réseau interne** : ne pas l'exposer sur Internet. Pas de double authentification (le code est le seul facteur). Les ports SSH et VNC du Pi doivent être limités aux postes de l'informatique ([docs/SECURITE.md](docs/SECURITE.md), section 7).
-- Les statistiques mesurent ce que les infirmières déclarent avec les boutons : une consultation oubliée ouverte ou un appui manquant fausse les chiffres. Elles ne remplacent pas un registre officiel.
-- Les mesures commencent au déploiement de la fonction de statistiques : pas d'historique antérieur.
+- Les statistiques mesurent ce que les infirmières déclarent avec les boutons : une consultation oubliée ouverte fausse les chiffres. Elles ne remplacent pas un registre officiel.
 - Au-delà de 4 infirmières sur un même écran, les textes deviennent petits.
 - Les horaires sont par jour de la semaine ; pas de calendrier (vacances, jours fériés).
+- Sur un réseau local en HTTP, les codes circulent en clair : activer le HTTPS local si le réseau n'est pas maîtrisé. Exposer l'application sur Internet reste une **option avancée** à décider avec le service informatique.
 
 ## Licence
 

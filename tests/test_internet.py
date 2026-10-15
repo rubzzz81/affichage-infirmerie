@@ -33,10 +33,10 @@ for f in ("config.json", "data.db", "state.json", "server.log", "auth.log"):
     if os.path.exists(f):
         os.remove(f)
 subprocess.run("rm -rf certs", shell=True)
-SECRET = {"broux": auth.new_totp_secret(), "direction": auth.new_totp_secret()}     # glinka : pas de second facteur
+SECRET = {"dupont": auth.new_totp_secret(), "direction": auth.new_totp_secret()}     # martin : pas de second facteur
 cfg = {"school": "Test", "title": "T", "port": HP, "domain": "pitest.example", "httpBind": "127.0.0.1",
-       "nurses": [{"id": "broux", "name": "Mme B", "hours": {"default": ["00:00", "23:59"]}, "totpSecret": SECRET["broux"]},
-                  {"id": "glinka", "name": "Mme G", "hours": {"default": ["00:00", "23:59"]}}],
+       "nurses": [{"id": "dupont", "name": "Mme D", "hours": {"default": ["00:00", "23:59"]}, "totpSecret": SECRET["dupont"]},
+                  {"id": "martin", "name": "Mme M", "hours": {"default": ["00:00", "23:59"]}}],
        "admins": [{"id": "direction", "name": "Direction", "totpSecret": SECRET["direction"]}],
        "internalNetworks": ["10.0.0.0/8"], "externalAddresses": [IP],
        "sessionHoursExternal": {"nurse": 0.002, "admin": 1},
@@ -52,10 +52,10 @@ import server as srvmod  # noqa: E402
 gw = srvmod.default_gateway()
 check("la passerelle par défaut est lue dans la table de routage", gw is not None, str(gw))
 check("la passerelle (le pare-feu) est TOUJOURS externe, même si son adresse est privée", gw is None or srvmod.is_internal(gw) is False)
-check("une adresse privée du réseau interne est interne", srvmod.is_internal("10.5.35.50") is True)
+check("une adresse privée du réseau interne est interne", srvmod.is_internal("10.0.0.50") is True)
 check("« externalAddresses » : l'adresse listée est externe même dans une plage privée", srvmod.is_internal(IP) is False)
-check("une adresse publique est externe", srvmod.is_internal("45.15.220.130") is False)
-check("une IPv4 notée en IPv6 (::ffff:) est traitée comme son IPv4", srvmod.is_internal("::ffff:10.5.35.50") is True)
+check("une adresse publique est externe", srvmod.is_internal("203.0.113.10") is False)
+check("une IPv4 notée en IPv6 (::ffff:) est traitée comme son IPv4", srvmod.is_internal("::ffff:10.0.0.50") is True)
 check("une adresse illisible est externe, par prudence", srvmod.is_internal("n'importe-quoi") is False)
 
 srv = subprocess.Popen([sys.executable, "server.py"], env=dict(os.environ, PORT=str(HP), CABINET_NO_MDNS="1"),
@@ -108,11 +108,11 @@ try:
     check("externe, arrivé par une adresse IP : la page principale s'affiche (200, aucune donnée, pas de redirection)", s == 200 and "location" not in h and "Mme" not in t, f"{s} {h.get('location')}")
     s, h, j, t = req("GET", "/", headers={"Host": f"pitest.example:{TP}"})
     check("externe, nom de base : la page principale s'affiche aussi (pas de redirection)", s == 200 and "location" not in h, f"{s} {h.get('location')}")
-    s, h, j, t = req("GET", "/", headers={"Host": f"45.15.220.130:{TP}"})
+    s, h, j, t = req("GET", "/", headers={"Host": f"203.0.113.10:{TP}"})
     check("externe, adresse publique : la page principale s'affiche (jamais de redirection vers un nom « .local »)", s == 200 and "location" not in h, f"{s} {h.get('location')}")
     s, h, j, t = req("GET", "/", headers={"Host": f"nom-inconnu.exemple:{TP}"})
     check("externe, nom inconnu : la page principale s'affiche, sans redirection", s == 200 and "location" not in h, f"{s} {h.get('location')}")
-    s, h, j, t = req("GET", "/admin", headers={"Host": f"45.15.220.130:{TP}"})
+    s, h, j, t = req("GET", "/admin", headers={"Host": f"203.0.113.10:{TP}"})
     check("externe, adresse publique : /admin s'affiche directement (pas de redirection)", s == 200 and "Ma présence" in t, str(s))
     s, h, j, t = req("GET", "/api/accounts")
     check("externe : la liste des comptes est masquée", s == 200 and j.get("hidden") is True and j.get("nurses") == [] and j.get("admins") == [] and "Mme" not in t, t[:100])
@@ -128,27 +128,27 @@ try:
     check("externe : /api/stats sans connexion -> 401", s == 401)
 
     # --- 2. Connexion avec second facteur
-    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"])
+    s, h, j, t = login("nurse", "dupont", PIN["nurse:dupont"])
     check("externe : bon code SANS second facteur -> refusé (message neutre)", s == 401 and j.get("error") == GENERIC, f"{s} {j}")
-    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"], "000000")
+    s, h, j, t = login("nurse", "dupont", PIN["nurse:dupont"], "000000")
     check("externe : bon code + mauvais second facteur -> refusé (message neutre)", s == 401 and j.get("error") == GENERIC)
-    s, h, j, t = login("nurse", "broux", "000111", code_now("broux"))
+    s, h, j, t = login("nurse", "dupont", "000111", code_now("dupont"))
     check("externe : mauvais code + bon second facteur -> refusé (même message)", s == 401 and j.get("error") == GENERIC)
     s, h, j, t = login("nurse", "inconnue", "123456", "123456")
     check("externe : compte inexistant -> même message", s == 401 and j.get("error") == GENERIC)
 
     step = int(time.time() // 30)
-    good = code_now("broux")
+    good = code_now("dupont")
     spaced = good[:3] + " " + good[3:]
-    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"], spaced)
+    s, h, j, t = login("nurse", "dupont", PIN["nurse:dupont"], spaced)
     check("externe : bon code + bon second facteur -> connecté", s == 200 and j.get("ok") and "set-cookie" in h, f"{s} {j}")
     NB = h.get("set-cookie", "").split(";")[0]
     check("externe : cookie Secure + HttpOnly + SameSite=Strict", all(x in h.get("set-cookie", "") for x in ("Secure", "HttpOnly", "SameSite=Strict")))
-    s, h, j, t = login("nurse", "glinka", PIN["nurse:glinka"], "123456")
+    s, h, j, t = login("nurse", "martin", PIN["nurse:martin"], "123456")
     check("externe : compte SANS second facteur -> connexion impossible", s == 401 and j.get("error") == GENERIC, f"{s}")
-    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"], good)
+    s, h, j, t = login("nurse", "dupont", PIN["nurse:dupont"], good)
     check("anti-rejeu : le même code du second facteur ne sert qu'une fois", s == 401, str(s))
-    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"], code_now("broux", -1))
+    s, h, j, t = login("nurse", "dupont", PIN["nurse:dupont"], code_now("dupont", -1))
     check("anti-rejeu : un code d'une période PLUS ANCIENNE est refusé", s == 401, str(s))
     s, h, j, t = login("admin", "direction", PIN["admin:direction"], code_now("direction"))
     check("externe : administration avec second facteur -> connectée", s == 200 and j.get("role") == "admin")
@@ -161,13 +161,13 @@ try:
     check("avec session : /api/state accessible", s == 200 and "nurses" in j)
     s, h, j, t = req("POST", "/api/set", {"status": "present"}, cookie=NB)
     check("avec session : l'infirmière pilote son panneau", s == 200, str(s))
-    s, h, j, t = req("POST", "/api/set", {"id": "glinka", "status": "present"}, cookie=NB)
+    s, h, j, t = req("POST", "/api/set", {"id": "martin", "status": "present"}, cookie=NB)
     check("avec session : pas le panneau d'une autre (403)", s == 403)
-    s, h, j, t = req("GET", "/api/stats?nurse=glinka", cookie=NB)
+    s, h, j, t = req("GET", "/api/stats?nurse=martin", cookie=NB)
     check("avec session : pas les statistiques d'une autre (403)", s == 403)
     s, h, j, t = req("GET", "/api/stats", cookie=AD)
     check("administration externe : voit toutes les statistiques", s == 200 and len(j["nurses"]) == 2)
-    s, h, j, t = req("POST", "/api/set", {"id": "broux", "status": "absent"}, cookie=AD)
+    s, h, j, t = req("POST", "/api/set", {"id": "dupont", "status": "absent"}, cookie=AD)
     check("administration externe : lecture seule (403)", s == 403)
 
     # --- 4. En-têtes
@@ -218,7 +218,7 @@ try:
     s, h, j, t = req("GET", "/api/accounts")
     check("après la libération des connexions, le service répond de nouveau", s == 200, str(s))
 
-    s, h, j, t = login("nurse", "broux", PIN["nurse:broux"], code_now("broux", 1))
+    s, h, j, t = login("nurse", "dupont", PIN["nurse:dupont"], code_now("dupont", 1))
     NB2 = h.get("set-cookie", "").split(";")[0]
     streams, codes = [], []
     for _ in range(3):
@@ -233,18 +233,18 @@ try:
 
     # --- 7. Verrouillages séparés interne / externe (test direct du module d'authentification)
     A = auth.Auth("config.json", log=lambda m: None)
-    pinb = PIN["nurse:broux"]
+    pinb = PIN["nurse:dupont"]
     for i in range(10):
-        A.login("nurse", "broux", "faux-code", f"198.51.100.{i + 1}", external=True, code="000000")
-    ok, data = A.login("nurse", "broux", pinb, "198.51.100.200", external=True, code=auth.totp_at(SECRET["broux"], int(time.time() // 30) + 1))
+        A.login("nurse", "dupont", "faux-code", f"198.51.100.{i + 1}", external=True, code="000000")
+    ok, data = A.login("nurse", "dupont", pinb, "198.51.100.200", external=True, code=auth.totp_at(SECRET["dupont"], int(time.time() // 30) + 1))
     check("10 échecs depuis Internet : le compte est verrouillé POUR LES CONNEXIONS EXTERNES", not ok and data.get("retry", 0) > 0, str(data))
-    ok, data = A.login("nurse", "broux", pinb, "10.5.35.50", external=False)
+    ok, data = A.login("nurse", "dupont", pinb, "10.0.0.50", external=False)
     check("...mais l'infirmière peut toujours se connecter depuis le lycée (pas de déni de service)", ok, str(data))
-    ok, data = A.login("nurse", "broux", pinb, "10.5.35.51", external=False, code=None)
+    ok, data = A.login("nurse", "dupont", pinb, "10.0.0.51", external=False, code=None)
     check("connexion interne : le second facteur n'est pas exigé (mode « external »)", ok)
     A_always = auth.Auth("config.json", log=lambda m: None)
     A_always.cfg["totp"] = "always"
-    ok, data = A_always.login("nurse", "broux", pinb, "10.5.35.52", external=False)
+    ok, data = A_always.login("nurse", "dupont", pinb, "10.0.0.52", external=False)
     check("mode « always » : le second facteur est aussi exigé en interne", not ok and data.get("error") == GENERIC, str(data))
 
     # --- 8. Renouvellement du certificat sans redémarrage

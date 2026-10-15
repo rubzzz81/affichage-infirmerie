@@ -13,8 +13,8 @@ infirmières qui ne sont pas sur le même réseau que le Pi), **en limitant les 
 
 ```
  Infirmière (4G, domicile)              Pare-feu du lycée                    Réseau isolé (DMZ)
- ───────────────────────►  45.15.220.130 : 443   ──redirection──►   Pi 10.255.5.223 : 8443
-        HTTPS chiffré                  (un seul port)                (passerelle 10.255.5.202)
+ ───────────────────────►  203.0.113.10 : 443   ──redirection──►   Pi 192.168.1.50 : 8443
+        HTTPS chiffré                  (un seul port)                (passerelle 192.168.1.1)
 ```
 
 - **Un seul port** traverse le pare-feu : le port **HTTPS**. Rien d'autre (jamais SSH 22, VNC 5900, HTTP 8080).
@@ -49,8 +49,6 @@ par défaut les adresses privées `10.x`, `172.16-31.x`, `192.168.x`). Le Pi lui
 | Connexions simultanées par adresse | 100 | **20** (et 3 flux temps réel) |
 | Page d'aide au certificat | accessible | introuvable |
 
-![Écran de connexion vu d'Internet : identifiant à saisir, code personnel, code de l'application](img/connexion-externe.png)
-
 Points importants :
 - **Les échecs venus d'Internet ne bloquent jamais les infirmières au lycée.** Sans cette séparation, un attaquant pourrait verrouiller les comptes en tapant de faux codes.
 - Le second facteur ne peut pas être rejoué : un code déjà utilisé, ou plus ancien que le dernier accepté, est refusé.
@@ -66,8 +64,8 @@ Sur le Pi, en SSH :
 ```bash
 cd ~/cabinet
 python3 deploy/pins.py generate               # codes personnels (notez-les)
-python3 deploy/pins.py totp nurse:broux       # second facteur, un compte après l'autre
-python3 deploy/pins.py totp nurse:glinka
+python3 deploy/pins.py totp nurse:dupont       # second facteur, un compte après l'autre
+python3 deploy/pins.py totp nurse:martin
 python3 deploy/pins.py totp admin:administration
 python3 deploy/pins.py list                   # contrôle : « Second facteur : activé » partout
 ```
@@ -79,18 +77,18 @@ tant que ce code n'est pas bon.** Remettre les codes **en main propre**.
 > Perte du téléphone : refaire `python3 deploy/pins.py totp <compte>` (nouvelle clé : l'ancienne ne marche plus) et changer le code (`set`).
 > Les secrets du second facteur sont dans `config.json` (droits 600, jamais publié) : sauvegardez ce fichier de façon sûre.
 
-### 3.2 Changer l'adresse du Pi (10.255.5.223, passerelle 10.255.5.202)
+### 3.2 Changer l'adresse du Pi (192.168.1.50, passerelle 192.168.1.1)
 
-Le Pi est aujourd'hui en `10.5.35.101/8`. **À faire de préférence devant le Pi** (clavier + écran) : la connexion SSH ou VNC est coupée au changement,
+Le Pi est aujourd'hui en `10.0.0.40/8`. **À faire de préférence devant le Pi** (clavier + écran) : la connexion SSH ou VNC est coupée au changement,
 et **votre PC peut ne plus joindre le Pi** s'il n'est pas sur le même réseau que la nouvelle adresse. C'est normal : ce n'est pas un échec.
 
 1. **Essai à blanc** (aucune modification, ne demande pas `sudo`) : il lit la configuration actuelle et contrôle vos valeurs.
    ```bash
-   sh ~/cabinet/deploy/set-static-ip.sh 10.255.5.223/24 10.255.5.202 --dry-run
+   sh ~/cabinet/deploy/set-static-ip.sh 192.168.1.50/24 192.168.1.1 --dry-run
    ```
 2. **Le vrai changement** (demande le mot de passe `sudo`) :
    ```bash
-   sh ~/cabinet/deploy/set-static-ip.sh 10.255.5.223/24 10.255.5.202
+   sh ~/cabinet/deploy/set-static-ip.sh 192.168.1.50/24 192.168.1.1
    ```
 3. **Lire le résultat** (il survit au redémarrage) :
    ```bash
@@ -105,19 +103,19 @@ et **votre PC peut ne plus joindre le Pi** s'il n'est pas sur le même réseau q
 - Relance ensuite l'application (pour que l'annonce du nom `.local` suive la nouvelle adresse).
 
 > **Le masque** (`/24` ci-dessus) est à confirmer avec le service informatique : `/24` = `255.255.255.0`, `/8` = `255.0.0.0`.
-> Avec `/24`, l'adresse et la passerelle doivent partager les trois premiers nombres (`10.255.5.x`).
+> Avec `/24`, l'adresse et la passerelle doivent partager les trois premiers nombres (`192.168.1.x`).
 >
 > **Si l'adresse revient à l'ancienne** : lisez `~/cabinet-ip.log`. La ligne `ÉCHEC - la passerelle … ne répond pas` signifie que le Pi n'a pas pu joindre
 > la passerelle sur ce réseau (câble branché sur le mauvais réseau, mauvaise passerelle, adresse déjà prise, port du switch dans un autre VLAN) : le retour arrière est alors voulu.
 > Option `--confirm` : exige en plus un `touch /tmp/cabinet-ip-ok` dans les 120 s.
 >
-> **Le câble réseau** doit être branché sur le réseau qui porte `10.255.5.0/24` (celui de la passerelle `10.255.5.202`) *avant* de lancer le changement.
+> **Le câble réseau** doit être branché sur le réseau qui porte `192.168.1.0/24` (celui de la passerelle `192.168.1.1`) *avant* de lancer le changement.
 
 Ensuite : mettre à jour le DNS interne, les favoris et `~/.ssh/known_hosts`, et **relancer `sh deploy/setup-https.sh`** si vous utilisez encore le certificat local
 (il porte l'ancienne adresse). L'écran du couloir n'a rien à changer (il utilise `localhost`).
 ### 3.3 Les noms DNS (domaine du lycée)
 
-Créer, chez l'hébergeur du domaine, les enregistrements **A** vers l'adresse publique **45.15.220.130** :
+Créer, chez l'hébergeur du domaine, les enregistrements **A** vers l'adresse publique **203.0.113.10** :
 
 | Nom | Rôle |
 |---|---|
@@ -126,7 +124,7 @@ Créer, chez l'hébergeur du domaine, les enregistrements **A** vers l'adresse p
 | `infirmerie.<domaine>` | nom de base |
 
 (Ou un seul enregistrement « joker » `*.infirmerie.<domaine>`.) Pour les ordinateurs **du lycée**, prévoir sur le DNS interne
-les mêmes noms vers `10.255.5.223` (« split DNS »), sinon leurs requêtes passeraient par l'adresse publique et exigeraient une
+les mêmes noms vers `192.168.1.50` (« split DNS »), sinon leurs requêtes passeraient par l'adresse publique et exigeraient une
 traduction « en épingle » (hairpin NAT) sur le pare-feu.
 
 ### 3.4 Un vrai certificat (recommandé)
@@ -189,7 +187,7 @@ Puis : `systemctl --user restart cabinet.service`.
 
 | Règle | Détail |
 |---|---|
-| **Entrée** (redirection de port) | TCP `45.15.220.130:443` → `10.255.5.223:8443`. **Uniquement celle-ci.** |
+| **Entrée** (redirection de port) | TCP `203.0.113.10:443` → `192.168.1.50:8443`. **Uniquement celle-ci.** |
 | **Pas de NAT source** | Le Pi doit voir l'adresse **réelle** du visiteur. Désactiver le « masquerade / SNAT » sur cette règle |
 | **Tout le reste refusé** | Aucune redirection pour 22 (SSH), 5900 (VNC), 8080, 80, 3389... |
 | **Limitation de débit** | Par exemple 30 nouvelles connexions par minute et par adresse source ; plafond global de connexions simultanées |
@@ -220,7 +218,7 @@ sudo ufw enable
 
 **Depuis une machine HORS du réseau du lycée** (téléphone en 4G avec Termux, PC à la maison...) :
 ```bash
-python3 tools/check-exposure.py 45.15.220.130 443 --verifie-certificat
+python3 tools/check-exposure.py 203.0.113.10 443 --verifie-certificat
 # ou, avec le nom : python3 tools/check-exposure.py admin.infirmerie.<domaine> 443 --verifie-certificat
 ```
 Le script contrôle (sans rien tenter d'offensif) : les ports joignables (**seul le port HTTPS doit répondre**), ce qu'un inconnu peut lire
@@ -231,11 +229,11 @@ Contrôle de l'adresse source (à faire une fois la redirection active) : connec
 ```bash
 tail -3 ~/cabinet/auth.log
 ```
-La ligne doit montrer **l'adresse publique du téléphone** et « (externe) ». Si elle montre l'adresse du pare-feu (`10.255.5.202`) : le pare-feu
+La ligne doit montrer **l'adresse publique du téléphone** et « (externe) ». Si elle montre l'adresse du pare-feu (`192.168.1.1`) : le pare-feu
 masque l'origine des visiteurs (NAT source). L'application les traite alors comme externes (c'est la protection voulue) mais le blocage par
 adresse perd son sens : **demandez de supprimer le NAT source**.
 
-**Tester par l'adresse IP publique.** Vous pouvez joindre le panneau par `https://45.15.220.130:8443/admin` (ou `/stats`) avant que le DNS existe.
+**Tester par l'adresse IP publique.** Vous pouvez joindre le panneau par `https://203.0.113.10:8443/admin` (ou `/stats`) avant que le DNS existe.
 Le navigateur affiche alors un avertissement de certificat : il est normal tant que le certificat ne couvre pas cette adresse (voir 3.4).
 L'application **reste sur l'adresse tapée** : elle ne renvoie jamais un visiteur vers un nom `.local` qu'il ne sait pas résoudre depuis Internet.
 **Attention au port :** le port 443 de cette adresse peut être pris par un autre service (ici un nginx) ; il faut alors garder `:8443`.

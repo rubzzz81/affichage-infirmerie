@@ -5,12 +5,16 @@ set -e
 APP="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$APP"
 
-# 0. Configuration de l'établissement : créée à partir du modèle si elle n'existe pas
+# 0. Prérequis (présents par défaut sur Raspberry Pi OS avec bureau)
+for cmd in python3 curl; do
+  command -v $cmd >/dev/null 2>&1 || { echo "Il manque '$cmd' : sudo apt install $cmd"; exit 1; }
+done
+command -v chromium >/dev/null 2>&1 || command -v chromium-browser >/dev/null 2>&1 \
+  || echo "Attention : Chromium est introuvable (l'écran du couloir en a besoin) : sudo apt install chromium"
+
+# 0b. Configuration de l'établissement : assistant interactif si config.json n'existe pas encore
 if [ ! -f config.json ]; then
-  cp config.example.json config.json
-  echo ">> config.json créé à partir du modèle : éditez-le (nom de l'établissement, infirmières, logo)"
-  echo "   puis relancez : sh deploy/install.sh"
-  exit 0
+  python3 deploy/setup.py || { echo "Configuration interrompue : relancez sh deploy/install.sh"; exit 1; }
 fi
 python3 -c "import json; json.load(open('config.json', encoding='utf-8'))" \
   || { echo "config.json n'est pas un JSON valide"; exit 1; }
@@ -57,4 +61,12 @@ cat > "$HOME/.config/labwc/autostart" <<EOF
 /usr/bin/kanshi &
 $APP/deploy/kiosk.sh &
 EOF
-echo "Installation terminée. Redémarrez le Pi : sudo reboot"
+PORT=$(python3 -c "import json; print(json.load(open('config.json', encoding='utf-8')).get('port', 8080))")
+IP=$(hostname -I 2>/dev/null | awk '{print $1}')
+echo
+echo "Installation terminée. Redémarrez le Pi pour lancer l'écran : sudo reboot"
+echo
+echo "  Panneau des infirmières (téléphone, PC) : http://${IP:-<adresse-du-Pi>}:$PORT/admin"
+echo "  Statistiques (administration)           : http://${IP:-<adresse-du-Pi>}:$PORT/stats"
+echo "  Écran du couloir                        : http://${IP:-<adresse-du-Pi>}:$PORT/"
+echo "  (HTTPS, noms et accès depuis Internet sont facultatifs : voir docs/SECURITE.md)"

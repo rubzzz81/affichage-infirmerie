@@ -2,7 +2,7 @@
 # Change l'adresse IP fixe du Pi, vérifie que le réseau fonctionne, et revient en arrière sinon.
 # Demande les droits administrateur (mot de passe sudo).
 #
-#   sh deploy/set-static-ip.sh 10.255.5.223/24 10.255.5.202 [serveur-DNS] [options]
+#   sh deploy/set-static-ip.sh 192.168.1.50/24 192.168.1.1 [serveur-DNS] [options]
 #
 # Arguments : adresse/masque (notation CIDR : /24 = 255.255.255.0, /8 = 255.0.0.0), passerelle, et
 # facultativement le serveur DNS (8.8.8.8 par défaut).
@@ -51,7 +51,7 @@ try:
 except ValueError as e:
     print("ERREUR adresse ou passerelle invalide : %s" % e); raise SystemExit
 if "/" not in os.environ["ADDR"]:
-    print("ERREUR l'adresse doit porter son masque, par exemple 10.255.5.223/24")
+    print("ERREUR l'adresse doit porter son masque, par exemple 192.168.1.50/24")
 elif itf.version != 4 or gw.version != 4:
     print("ERREUR seules les adresses IPv4 sont gérées ici")
 elif gw not in itf.network:

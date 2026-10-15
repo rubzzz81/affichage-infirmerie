@@ -17,6 +17,8 @@ Un Raspberry Pi = un établissement (ou un groupe de cabinets qui partagent le m
 
 ## Checklist de déploiement
 
+> **Plus simple :** `sh deploy/install.sh` lance un assistant (`deploy/setup.py`) qui crée `config.json` et les codes à votre place : voir [INSTALLATION-RAPIDE.md](INSTALLATION-RAPIDE.md). La checklist ci-dessous reste valable pour une installation manuelle ou plusieurs établissements.
+
 1. **Préparer le Pi** : suivre les étapes 1 à 5 du [guide pas à pas](GUIDE.md) (carte SD, réseau, SSH).
 2. **Récupérer le code** sur le PC puis le copier sur le Pi :
    ```powershell

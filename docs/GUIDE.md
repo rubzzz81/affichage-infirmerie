@@ -4,10 +4,12 @@ Ce guide refait toute la mise en place, dans l'ordre, avec le détail de chaque
 geste. Chaque étape se termine par une **✅ Vérification** : ne passez à la
 suivante que si elle est bonne.
 
+> **Pressé ?** [INSTALLATION-RAPIDE.md](INSTALLATION-RAPIDE.md) résume l'installation en 4 étapes (assistant de configuration, réseau local, sans HTTPS ni Internet). Ce guide-ci détaille chaque geste.
+
 **Convention** : les blocs `powershell` se tapent sur le **PC Windows** ; les blocs
 `bash` se tapent sur le **Raspberry Pi**, une fois connecté en SSH (étape 5).
 Les valeurs entre chevrons (`<IP>`, `<utilisateur>`) sont à remplacer par les vôtres.
-Dans notre installation : IP `10.5.35.101`, nom d'hôte `pi-infirmerie`.
+Dans l'exemple : IP `10.0.0.40`, nom d'hôte `pi-infirmerie`.
 
 ## Sommaire
 
@@ -29,13 +31,11 @@ Dans notre installation : IP `10.5.35.101`, nom d'hôte `pi-infirmerie`.
 
 ## 0. Le résultat visé
 
-Le besoin de départ était ce schéma : une colonne par infirmière, un grand bloc
+Le besoin de départ : une colonne par infirmière, un grand bloc
 de couleur pour l'état, et les horaires du jour.
 
-![Schéma initial dessiné à la main](img/maquette-initiale.jpg)
-
-Le résultat obtenu, sur l'écran du couloir (ici, Mme Broux en consultation et
-Mme Glinka absente temporairement, avec son retour prévu) :
+Le résultat obtenu, sur l'écran du couloir (ici, Mme Dupont en consultation et
+Mme Martin absente temporairement, avec son retour prévu) :
 
 ![Écran d'affichage : consultation et absence temporaire](img/affichage-2-consultation-pause.png)
 
@@ -153,7 +153,7 @@ Sur le bureau du Pi, ouvrir un terminal (icône ▮ dans la barre du haut) et ta
 ```bash
 hostname -I
 ```
-La première adresse affichée est l'IP (par exemple `10.5.35.101`).
+La première adresse affichée est l'IP (par exemple `10.0.0.40`).
 
 ### Méthode B : depuis le PC, avec le nom d'hôte
 
@@ -179,7 +179,7 @@ ping <IP>
 ```
 Réponse attendue :
 ```
-Réponse de 10.5.35.101 : octets=32 temps<1ms TTL=64
+Réponse de 10.0.0.40 : octets=32 temps<1ms TTL=64
 ```
 (`TTL=64` est typique d'un système Linux.)
 
@@ -244,7 +244,7 @@ nano config.json
 Contenu type, à adapter :
 ```json
 {
-  "school": "Lycée Louis Rascol",
+  "school": "Lycée Exemple",
   "title": "Cabinet d'infirmières",
   "logo": "branding/logo.png",
   "port": 8080,
@@ -255,8 +255,8 @@ Contenu type, à adapter :
     { "id": "administration", "name": "Administration" }
   ],
   "nurses": [
-    { "id": "broux",  "name": "Mme Broux",  "hours": { "default": ["08:00", "18:00"] } },
-    { "id": "glinka", "name": "Mme Glinka", "hours": { "default": ["08:00", "16:00"] } }
+    { "id": "dupont",  "name": "Mme Dupont",  "hours": { "default": ["08:00", "18:00"] } },
+    { "id": "martin", "name": "Mme Martin", "hours": { "default": ["08:00", "16:00"] } }
   ]
 }
 ```
@@ -381,7 +381,7 @@ Le Pi est joignable par tout le réseau du lycée, **élèves compris**. Sans pr
    ```bash
    python3 deploy/pins.py generate
    ```
-   Pour choisir vous-même un code : `python3 deploy/pins.py set nurse:broux`. Remettez chaque code à son titulaire **en main propre**, puis effacez le terminal (`clear`).
+   Pour choisir vous-même un code : `python3 deploy/pins.py set nurse:dupont`. Remettez chaque code à son titulaire **en main propre**, puis effacez le terminal (`clear`).
 3. Redémarrer le serveur :
    ```bash
    systemctl --user restart cabinet.service
@@ -414,7 +414,7 @@ grep '^password=' ~/.config/wayvnc/config
 
 **Se connecter depuis l'autre PC**
 1. Installer un client VNC gratuit : [RealVNC Viewer](https://www.realvnc.com/fr/connect/download/viewer/) ou [TigerVNC](https://tigervnc.org/) (les deux sont compatibles).
-2. Se connecter à l'adresse du Pi **sans préciser de port** : `10.5.35.101` (le port 5900 est le port par défaut). Si vous devez absolument le préciser, écrivez-le avec **deux** deux-points : `10.5.35.101::5900`. Avec un seul (`10.5.35.101:5900`), TigerVNC l'interprète comme un numéro d'écran et tente le port 59000, qui échoue avec « connexion refusée ».
+2. Se connecter à l'adresse du Pi **sans préciser de port** : `10.0.0.40` (le port 5900 est le port par défaut). Si vous devez absolument le préciser, écrivez-le avec **deux** deux-points : `10.0.0.40::5900`. Avec un seul (`10.0.0.40:5900`), TigerVNC l'interprète comme un numéro d'écran et tente le port 59000, qui échoue avec « connexion refusée ».
 3. Accepter l'avertissement sur le certificat à la première connexion : c'est normal, le certificat est auto-signé et propre à ce Pi.
 4. Saisir l'utilisateur `vnc` et le mot de passe.
 
@@ -443,7 +443,7 @@ Le panneau des infirmières a **son propre site** (`pi-infirmerie-admin.local`),
 
 Chaque infirmière enregistre la page en **favori** ou l'ajoute à l'**écran d'accueil** du téléphone, ou scanne un **QR code** collé près de l'écran : un seul geste ensuite. Cette adresse ouvre l'écran de connexion, jamais un panneau.
 
-> Un lien personnel présélectionne le nom : `https://pi-infirmerie-admin.local:8443/?me=broux`. Le code reste obligatoire.
+> Un lien personnel présélectionne le nom : `https://pi-infirmerie-admin.local:8443/?me=dupont`. Le code reste obligatoire.
 
 ### 9.2 Se connecter avec son code personnel
 
@@ -548,7 +548,7 @@ Les données des captures ci-dessous sont **fictives** (démonstration sur 4 sem
 
 ![Tableau de bord des statistiques](img/stats-1-tableau-de-bord.png)
 
-**Choisir l'infirmière** (administration) : la ligne « Infirmière » en haut permet de voir **toutes les infirmières** côte à côte, ou **une seule** (*Mme Broux*, *Mme Glinka*…). Le choix s'applique aux chiffres, aux graphiques et aux exports CSV.
+**Choisir l'infirmière** (administration) : la ligne « Infirmière » en haut permet de voir **toutes les infirmières** côte à côte, ou **une seule** (*Mme Dupont*, *Mme Martin*…). Le choix s'applique aux chiffres, aux graphiques et aux exports CSV.
 
 Vue de l'administration filtrée sur **une infirmière** :
 
