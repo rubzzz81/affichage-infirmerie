@@ -71,21 +71,39 @@ def main():
     ap.add_argument("--days", type=int, default=60)
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--merge", action="store_true", help="ajoute les faux événements à un data.db EXISTANT (production), "
+                    "avec des identifiants négatifs et seulement avant le premier vrai événement")
+    ap.add_argument("--remove", action="store_true", help="supprime les faux événements ajoutés par --merge")
     a = ap.parse_args()
 
     cfg_path = os.path.join(a.dossier, "config.json")
     db_path = os.path.join(a.dossier, "data.db")
     if not os.path.isfile(cfg_path):
         sys.exit("config.json introuvable dans " + a.dossier)
-    if os.path.exists(db_path) and not a.force:
+    if a.remove:
+        db = sqlite3.connect(db_path, timeout=30)
+        n = db.execute("DELETE FROM events WHERE id < 0").rowcount
+        db.commit()
+        db.close()
+        sys.exit("%d faux événements supprimés (les vrais n'ont pas été touchés)." % n)
+    if os.path.exists(db_path) and not a.force and not a.merge:
         sys.exit("%s existe déjà : refus d'écraser de vraies données (--force pour remplacer)." % db_path)
     nurses = json.load(open(cfg_path, encoding="utf-8"))["nurses"]
 
     rnd = random.Random(a.seed)
-    if os.path.exists(db_path):
-        os.remove(db_path)
-    db = sqlite3.connect(db_path)
-    db.executescript("""
+    first_real = None
+    if a.merge:
+        db = sqlite3.connect(db_path, timeout=30)
+        db.execute("DELETE FROM events WHERE id < 0")                      # idempotent
+        row = db.execute("SELECT MIN(start) FROM events").fetchone()
+        first_real = row[0] if row and row[0] else None
+    else:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+        db = sqlite3.connect(db_path)
+    next_id = -1
+    if not a.merge:
+        db.executescript("""
         CREATE TABLE events(id INTEGER PRIMARY KEY, nurse TEXT NOT NULL, status TEXT NOT NULL,
             start INTEGER NOT NULL, "end" INTEGER, auto INTEGER NOT NULL DEFAULT 0);
         CREATE INDEX events_start ON events(start);
@@ -96,20 +114,23 @@ def main():
         day = today - datetime.timedelta(days=back)
         if day.weekday() >= 5:
             continue
+        if first_real and int(datetime.datetime.combine(day + datetime.timedelta(days=1), datetime.time(0)).timestamp()) > first_real:
+            continue                          # jamais de faux événement à côté de vrais
         for nurse in nurses:
             if rnd.random() < 0.06:           # absence (maladie, formation) : aucune activité ce jour
                 continue
             busy = rnd.uniform(0.6, 1.5)
             evs = make_day(nurse, day, rnd, busy)
             for status, s, e in evs:
-                db.execute('INSERT INTO events(nurse, status, start, "end", auto) VALUES(?,?,?,?,0)',
-                           (nurse["id"], status, s, e))
+                db.execute('INSERT INTO events(id, nurse, status, start, "end", auto) VALUES(?,?,?,?,?,0)',
+                           (next_id, nurse["id"], status, s, e)); next_id -= 1
                 n += 1
             if evs:                           # fin de journée automatique (absente), comme le vrai serveur
-                db.execute('INSERT INTO events(nurse, status, start, "end", auto) VALUES(?,?,?,?,1)',
-                           (nurse["id"], "absent", evs[-1][2], evs[-1][2] + 3600 * 14))
+                db.execute('INSERT INTO events(id, nurse, status, start, "end", auto) VALUES(?,?,?,?,?,1)',
+                           (next_id, nurse["id"], "absent", evs[-1][2], evs[-1][2] + 3600 * 10)); next_id -= 1
                 n += 1
-    db.execute("INSERT INTO meta VALUES('last_seen', ?)", (int(datetime.datetime.now().timestamp()),))
+    if not a.merge:
+        db.execute("INSERT INTO meta VALUES('last_seen', ?)", (int(datetime.datetime.now().timestamp()),))
     db.commit()
     db.close()
     print("%d événements fictifs sur %d jours pour %d infirmière(s) : %s" % (n, a.days, len(nurses), db_path))

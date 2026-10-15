@@ -142,3 +142,8 @@ python3 deploy/pins.py generate && python3 server.py   # codes de démonstration
 
 Le script refuse d'écraser un `data.db` existant (sauf `--force`) : ne le lancez jamais dans le
 dossier de production. L'instance de démonstration est indépendante (autre port, autre base).
+
+**Sur une instance réelle** (présentation temporaire) : `python3 tools/demo-data.py . --merge --days 90`
+ajoute les faux événements à `data.db` avec des identifiants négatifs, uniquement **avant** le
+premier vrai événement. Faites d'abord une copie de `data.db`. Pour tout retirer, sans toucher aux
+vraies données : `python3 tools/demo-data.py . --remove`.
