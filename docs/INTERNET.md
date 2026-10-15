@@ -173,10 +173,9 @@ Dans `~/cabinet/config.json`, adapter (le reste est conservé) :
 |---|---|
 | `domain` | Noms des sites : `admin.<domaine>` et `stats.<domaine>` (vrais sous-domaines, connexion partagée) |
 | `httpBind: "127.0.0.1"` | Le port HTTP 8080 n'est plus joignable que depuis le Pi (kiosque) : **un seul port exposé**, le HTTPS |
-| `totp` | `"external"` (défaut) : second facteur exigé depuis Internet ; `"always"` : aussi au lycée ; `"never"` : jamais (déconseillé) |
+| `totp` | `"external"` (défaut) : second facteur exigé depuis Internet ; `"always"` : aussi au lycée ; `"never"` : jamais (déconseillé : le code seul suffit, même depuis Internet) |
 | `sessionHoursExternal` | Durée d'inactivité avant déconnexion, depuis Internet |
 | `publicDisplay` | `"internal"` : l'écran public est lisible au lycée ; `"local"` : seulement sur l'écran du Pi ; `"everyone"` : aussi depuis Internet (déconseillé : présence et postes visibles de tous). Depuis Internet, `/` affiche une page d'accueil avec les liens `/admin` et `/stats` ; l'écran n'y apparaît que dans le dernier cas |
-| `totp` | `"external"` (défaut : second facteur pour toute connexion venue d'Internet), `"always"`, `"never"` (retiré : le code seul suffit, même depuis Internet) |
 | `internalNetworks` | Ce qui est « interne ». **À ajuster** selon les plages réelles du lycée (si les élèves ou le Wi-Fi invité ont des adresses privées, voir la note ci-dessous) |
 | `externalAddresses` | Adresses **toujours externes** (en plus de la passerelle, automatique). Mettre ici l'adresse du pare-feu si elle n'est pas la passerelle |
 
