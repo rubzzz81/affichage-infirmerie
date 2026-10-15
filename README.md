@@ -39,6 +39,8 @@ Guide complet, avec le matériel et les captures : **[Installation rapide](docs/
 | Tout faire pas à pas (carte SD, SSH, kiosque…), avec captures et dépannage | [docs/GUIDE.md](docs/GUIDE.md) |
 | Adapter à mon établissement, déployer dans plusieurs, faire une démonstration | [docs/ADAPTER.md](docs/ADAPTER.md) |
 | Comprendre les droits, le HTTPS local, les noms (`.local`), les codes perdus | [docs/SECURITE.md](docs/SECURITE.md) |
+| Résoudre un problème (écran, réseau, codes, certificats…) | [docs/DEPANNAGE.md](docs/DEPANNAGE.md) |
+| Exploiter au quotidien : sauvegardes, arrivées/départs, mises à jour, arrêt d'urgence | [docs/EXPLOITATION.md](docs/EXPLOITATION.md) |
 | *(Option)* Ouvrir l'accès depuis Internet | [docs/INTERNET.md](docs/INTERNET.md) |
 
 ## États

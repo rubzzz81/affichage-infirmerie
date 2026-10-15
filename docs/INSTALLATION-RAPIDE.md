@@ -115,4 +115,4 @@ Aucune de ces options n'est nécessaire au fonctionnement.
 | « Code incorrect » | Refaire un code : `python3 deploy/pins.py set nurse:<identifiant>` |
 | Compte bloqué | Attendre quelques minutes (blocage temporaire) |
 
-Autres cas : [GUIDE.md](GUIDE.md) (annexe « Problèmes courants »).
+Autres cas : [DEPANNAGE.md](DEPANNAGE.md) ; au quotidien : [EXPLOITATION.md](EXPLOITATION.md).
