@@ -96,7 +96,7 @@ if DOMAIN:
 # réelle des clients (pas de NAT source), sinon tout paraîtrait venir du pare-feu.
 INTERNAL_NETS = [ipaddress.ip_network(n, strict=False) for n in CONFIG.get(
     "internalNetworks", ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "::1/128", "fe80::/10"])]
-PUBLIC_DISPLAY = CONFIG.get("publicDisplay", "internal")    # "internal" : l'écran public est lisible depuis le réseau interne ; "local" : seulement depuis le Pi (kiosque)
+PUBLIC_DISPLAY = CONFIG.get("publicDisplay", "internal")    # "internal" : l'écran public est lisible depuis le réseau interne ; "local" : seulement depuis le Pi (kiosque) ; "everyone" : aussi depuis Internet
 LIMITS = {"total": 400, "perIpInternal": 100, "perIpExternal": 20, "sseTotal": 100, "sseExternal": 3, "sseInternal": 20}
 LIMITS.update(CONFIG.get("limits") or {})
 
@@ -661,7 +661,7 @@ class Handler(BaseHTTPRequestHandler):
         """Écran public (état courant, flux temps réel). Le Pi lui-même (kiosque) : toujours. Le réseau
         interne : si "publicDisplay" vaut "internal" (défaut). Depuis l'extérieur : jamais sans connexion."""
         ip = self.client_address[0]
-        if is_loopback(ip) or (PUBLIC_DISPLAY == "internal" and is_internal(ip)):
+        if is_loopback(ip) or PUBLIC_DISPLAY == "everyone" or (PUBLIC_DISPLAY == "internal" and is_internal(ip)):
             return True
         return self.session() is not None
 
@@ -680,15 +680,8 @@ class Handler(BaseHTTPRequestHandler):
             role = self.host_role()
             if role in ("admin", "stats"):               # sous-domaine : le site est à la racine
                 self.serve_page(role)
-            elif not self.may_read_state():               # écran public vu d'Internet : on renvoie vers la connexion
-                # Même nom d'hôte, chemin relatif : un visiteur arrivé par une adresse IP ou un nom que
-                # nous ne connaissons pas ne doit JAMAIS être renvoyé vers un autre nom (ex. un « .local »
-                # introuvable depuis Internet). Le nom du site « admin » n'est utilisé que si le visiteur
-                # est déjà arrivé par l'un de nos noms.
-                to = site_url(HOSTS["admin"]) if (HOSTS and role is not None) else "/admin"
-                self.send_bytes(302, b"", "text/plain", {"Location": to})
-            else:
-                self.send_static("index.html")
+            else:                                         # page principale pour tout le monde ; sans droit de lecture
+                self.send_static("index.html")            # (Internet), elle n'affiche que les liens /admin et /stats
         elif path in ("/admin", "/stats"):
             self.serve_page(path[1:])
         elif path == "/certificat":                      # aide à l'installation de l'autorité locale

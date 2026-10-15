@@ -41,6 +41,8 @@
   .hours .val { font-size: min(calc(var(--u) * 4.6), 11cqw); font-weight: 600; margin-top: calc(var(--u) * .6); font-variant-numeric: tabular-nums; }
   .hours .val span { color: var(--muted); font-weight: 400; margin: 0 .25em; }
   .changed .status { animation: pop .5s ease; }
+  .locked { grid-column: 1 / -1; align-self: center; text-align: center; font-size: calc(var(--u) * 3); color: var(--muted); line-height: 1.8; }
+  .locked a { color: #2563eb; font-weight: 600; text-decoration: none; }
   @keyframes pop { 40% { transform: scale(1.012); } }
   .offline { position: fixed; right: calc(var(--u) * 1.5); bottom: calc(var(--u) * 1); width: calc(var(--u) * 1.2); height: calc(var(--u) * 1.2); border-radius: 50%; background: #f59e0b; display: none; }
   body.off .offline { display: block; }
@@ -70,6 +72,12 @@
 
   function render(data) {
     document.body.classList.remove("off");
+    if (!data.nurses) {                  // pas de droit de lecture (visiteur venu d'Internet) : liens vers les pages protégées
+      main.innerHTML = `<div class="locked"><p>L'affichage de présence est réservé au réseau du lycée.</p>
+        <p><a href="/admin">Espace infirmières</a> &nbsp;·&nbsp; <a href="/stats">Statistiques</a></p></div>`;
+      last = {};
+      return;
+    }
     if (main.children.length !== data.nurses.length || data.nurses.some(n => !document.getElementById("c-" + n.id))) build(data.nurses);
     for (const n of data.nurses) {
       const card = document.getElementById("c-" + n.id), st = STATUS[n.status];
