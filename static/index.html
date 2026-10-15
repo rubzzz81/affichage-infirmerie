@@ -23,6 +23,8 @@
   .card { display: flex; flex-direction: column; min-width: 0; position: relative; container-type: inline-size; }
   .card + .card::before { content: ""; position: absolute; top: calc(var(--u) * 1); bottom: calc(var(--u) * 1); left: calc(var(--u) * -1.7); width: calc(var(--u) * .35); border-radius: 99px; background: #d3d7e0; }
   .name { font-size: min(calc(var(--u) * 4.2), 7.5cqw); font-weight: 600; text-align: center; padding-bottom: calc(var(--u) * 1.4); }
+  .phone { font-size: min(calc(var(--u) * 3.2), 6.5cqw); font-weight: 500; color: var(--muted); text-align: center; margin-top: calc(var(--u) * -1); padding-bottom: calc(var(--u) * 1.4); font-variant-numeric: tabular-nums; }
+  .phone:empty { display: none; }
   .status {
     flex: 1; min-height: 0; border-radius: calc(var(--u) * 3); color: #fff; background: var(--c);
     display: flex; flex-direction: column; align-items: center; justify-content: center; gap: calc(var(--u) * 1.2);
@@ -60,7 +62,7 @@
   function build(nurses) {
     main.innerHTML = nurses.map(n => `
       <section class="card" id="c-${n.id}">
-        <div class="name"></div>
+        <div class="name"></div><div class="phone"></div>
         <div class="status"><div class="ico"></div><div class="label"></div><div class="back"></div></div>
         <div class="hours"><div class="cap">Horaires d'aujourd'hui</div><div class="val"></div></div>
       </section>`).join("");
@@ -72,6 +74,7 @@
     for (const n of data.nurses) {
       const card = document.getElementById("c-" + n.id), st = STATUS[n.status];
       card.querySelector(".name").textContent = n.name;
+      card.querySelector(".phone").textContent = n.phone ? "Poste " + n.phone : "";
       card.querySelector(".status").style.setProperty("--c", st.color);
       card.querySelector(".ico").innerHTML = icon(n.status);
       const label = card.querySelector(".label");

@@ -13,11 +13,13 @@
     {
       "id": "dupont",
       "name": "Mme Dupont",
+      "phone": "1001",
       "hours": { "default": ["08:00", "18:00"], "wed": ["08:00", "12:00"] }
     },
     {
       "id": "martin",
       "name": "Mme Martin",
+      "phone": "1002",
       "hours": { "default": ["08:00", "16:00"] }
     }
   ]

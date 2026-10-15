@@ -200,6 +200,7 @@ def snapshot():
         out.append({
             "id": nid,
             "name": nurse["name"],
+            "phone": str(nurse.get("phone", ""))[:12],
             "status": s.get("status", "absent"),
             "back": s.get("back"),
             "start": start,

@@ -74,6 +74,7 @@ Un Raspberry Pi = un établissement (ou un groupe de cabinets qui partagent le m
 | `nurses[].id` | Court, sans espace ni accent, **unique** | Identifie la personne (liens `?me=`, statistiques) |
 | `nurses[].name` | Le nom affiché (« Mme Dupont », « M. Martin »…) | Titre de la carte |
 | `nurses[].hours` | Horaires habituels, par jour si besoin | Affichage, et heure du passage automatique en « Absente » |
+| `nurses[].phone` | (facultatif) numéro de poste interne, affiché sous le nom (ex. `"1001"`) | Écran du couloir. Ce numéro est une donnée locale : il reste dans `config.json`, qui n'est jamais versionné |
 
 Après toute modification : `systemctl --user restart cabinet.service`.
 
@@ -125,3 +126,19 @@ Si une mise à jour ajoute un champ de configuration, il est décrit ici et dans
 - [ ] Écran vérifié, un changement d'état testé depuis un téléphone
 - [ ] Veille de l'écran désactivée, IP réservée (DHCP)
 - [ ] Liens personnels (`?me=`) transmis aux infirmières
+
+## Présenter la solution avec de fausses statistiques
+
+Pour montrer l'outil à un collègue sans toucher aux vraies données, `tools/demo-data.py` génère
+un `data.db` **fictif** (60 à 90 jours d'activité plausible : consultations, pauses, absences) à
+partir des infirmières et des horaires d'un `config.json` :
+
+```bash
+mkdir ~/cabinet-demo && cp -r server.py auth.py mdns.py static deploy tools ~/cabinet-demo/
+cp config.example.json ~/cabinet-demo/config.json     # puis port 8090, "mdns": false
+cd ~/cabinet-demo && python3 tools/demo-data.py . --days 90
+python3 deploy/pins.py generate && python3 server.py   # codes de démonstration, puis lancement
+```
+
+Le script refuse d'écraser un `data.db` existant (sauf `--force`) : ne le lancez jamais dans le
+dossier de production. L'instance de démonstration est indépendante (autre port, autre base).
